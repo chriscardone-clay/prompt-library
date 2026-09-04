@@ -85,7 +85,26 @@ Run the app:
 npm run dev
 ```
 
-## Production setup
+## Where it runs
+
+| | |
+| --- | --- |
+| App | https://prompt-library-clay-run-df4af71e.vercel.app (Vercel team `clay-run`, project `prompt-library`, auto-deploys from `main`) |
+| Database | Supabase project `prompt-library` (ref `rtaubwokdmmpokhjbyyp`) in the Clay org, us-east-1 |
+| Repo | https://github.com/chriscardone-clay/prompt-library |
+
+Schema is applied with `npx supabase db push` from this repo (already linked). Env vars live in Vercel. The only piece not automated is the Google provider, which needs the Google Cloud console:
+
+1. Google Cloud Console → APIs & Services → Credentials → Create credentials → **OAuth client ID** → Web application.
+   - Authorised JavaScript origins: `https://prompt-library-clay-run-df4af71e.vercel.app`
+   - Authorised redirect URI: `https://rtaubwokdmmpokhjbyyp.supabase.co/auth/v1/callback`
+   - On the OAuth consent screen choose **Internal** (Clay Workspace only).
+2. Supabase Dashboard → project `prompt-library` → **Authentication → Sign In / Providers → Google**: turn it on, paste the client ID and client secret, save.
+3. Authentication → **URL Configuration** already has the site URL and the `/auth/callback` redirect URLs (set by the Management API). Add any custom domain there later.
+
+Then open the app and click "Continue with Google". Non-clay.com accounts are rejected by the database trigger even if Google lets them through.
+
+## Production setup from scratch
 
 ### 1. Supabase project
 
