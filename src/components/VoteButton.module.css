@@ -1,0 +1,36 @@
+.btn {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--oat-100);
+  color: var(--fg);
+  border: 1px solid var(--warm-line);
+  border-radius: var(--radius-pill);
+  padding: 6px 11px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 12px;
+  line-height: 1;
+  transition: opacity 120ms var(--ease), background 120ms var(--ease);
+}
+.btn:hover {
+  opacity: 0.85;
+}
+.btn[data-voted] {
+  background: var(--fg);
+  color: var(--oat-100);
+  border-color: var(--fg);
+}
+
+.onPage {
+  background: transparent;
+  border-color: var(--border-strong);
+}
+
+.md {
+  padding: 10px 16px;
+  font-size: 13px;
+  gap: 8px;
+}

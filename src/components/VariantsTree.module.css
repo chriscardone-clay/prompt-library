@@ -1,0 +1,87 @@
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.row {
+  display: flex;
+  align-items: stretch;
+}
+
+.connector {
+  width: 22px;
+  flex: none;
+  position: relative;
+}
+.connV {
+  position: absolute;
+  left: 8px;
+  top: 0;
+  bottom: 50%;
+  width: 2px;
+  background: var(--oat-300);
+}
+.connH {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  width: 14px;
+  height: 2px;
+  background: var(--oat-300);
+}
+
+.node {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: transparent;
+  border: 1px solid var(--warm-line);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  color: var(--fg);
+  transition: background 120ms var(--ease);
+}
+.node:hover {
+  background: var(--white);
+  text-decoration: none;
+}
+.node[aria-current="page"] {
+  background: var(--oat-100);
+  border-color: var(--fg);
+}
+
+.nodeTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.nodeTitle {
+  font-weight: 500;
+  font-size: 14px;
+  flex: 1;
+}
+.votes {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--fg-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.nodeSub {
+  font-size: 12px;
+  color: var(--fg-muted);
+}

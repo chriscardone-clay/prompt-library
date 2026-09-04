@@ -1,0 +1,206 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding-top: 12px;
+  max-width: 960px;
+}
+
+.titleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.forkLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--fg-muted);
+  flex-wrap: wrap;
+}
+.forkParent {
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.main {
+  flex: 1 1 520px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.side {
+  flex: 1 1 280px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.titleInput {
+  padding: 12px 14px;
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.bodyHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.code {
+  font-family: var(--font-mono);
+  background: var(--lemon-200);
+  color: var(--lemon-500);
+  border-radius: 4px;
+  padding: 0 5px;
+  font-size: 12px;
+}
+
+.phRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-height: 26px;
+}
+.phPill {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 12px;
+  background: var(--lemon-200);
+  color: var(--lemon-500);
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+
+.slab {
+  background: var(--bg-raised);
+  border-radius: var(--radius-xl);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.surfaceGroups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+}
+.surfaceGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 10px;
+  border-left: 2px solid var(--warm-line);
+}
+
+.visOption {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--warm-line);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  color: var(--fg);
+  transition: background 120ms var(--ease), border-color 120ms var(--ease);
+}
+.visOption:hover {
+  background: var(--oat-100);
+}
+.visOption[aria-pressed="true"] {
+  background: var(--oat-100);
+  border-color: var(--fg);
+}
+.visLabel {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.editorRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.editorText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.editorName {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.inviteRow {
+  display: flex;
+  gap: 6px;
+}
+.inviteInput {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--grey-line);
+  border-radius: var(--radius-pill);
+  padding: 8px 14px;
+  font-size: 13.5px;
+  background: var(--white);
+  color: var(--fg);
+}
+
+.footer {
+  flex-basis: 100%;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--warm-line-2);
+  padding-top: 20px;
+}
+
+.error {
+  color: var(--pom-400);
+}
+
+.deleteBtn {
+  background: transparent;
+  border: 0;
+  color: var(--fg-muted);
+  font-size: 13px;
+  padding: 8px 4px;
+}
+.deleteBtn:hover {
+  color: var(--pom-400);
+  text-decoration: underline;
+}

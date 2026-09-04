@@ -1,0 +1,94 @@
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.current {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--oat-100);
+  border: 1px solid var(--fg);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+}
+
+.label {
+  font-weight: 500;
+  font-size: 14px;
+}
+.sub {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--warm-line);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 10px 12px;
+  color: var(--fg);
+}
+.toggle:hover {
+  background: var(--oat-100);
+}
+.toggleText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+.vTitle {
+  font-size: 13px;
+  font-weight: 500;
+}
+.vBody {
+  background: var(--oat-100);
+  border: 1px solid var(--warm-line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.none {
+  font-size: 13px;
+  color: var(--fg-muted);
+  padding: 4px 2px;
+}
