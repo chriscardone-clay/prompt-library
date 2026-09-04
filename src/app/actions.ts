@@ -10,7 +10,7 @@ import {
   SURFACES,
 } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/server";
-import { getSiteUrl } from "@/lib/site";
+import { getRequestOrigin } from "@/lib/site";
 import type { PromptApp, PromptDraft } from "@/lib/types";
 
 export type ActionResult<T = undefined> =
@@ -22,7 +22,9 @@ export async function signInWithGoogle(formData: FormData) {
   const supabase = await createClient();
   const nextPath = String(formData.get("next") || "/");
   const safeNext = nextPath.startsWith("/") && !nextPath.startsWith("//") ? nextPath : "/";
-  const redirectTo = `${getSiteUrl()}/auth/callback?next=${encodeURIComponent(safeNext)}`;
+  // Return to whichever host the user started on (custom domain, vercel.app, localhost).
+  const origin = await getRequestOrigin();
+  const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(safeNext)}`;
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
@@ -117,23 +119,23 @@ export async function createPrompt(
   if (!v.ok) return v;
   const d = v.data;
 
-  const { data: created, error } = await supabase
-    .from("prompts")
-    .insert({
-      title: d.title,
-      description: d.description,
-      body: d.body,
-      audience: d.audience,
-      visibility: d.visibility,
-      owner_id: uid,
-      parent_id: parentId,
-      fork_note: parentId ? d.forkNote : "",
-    })
-    .select("id")
-    .single();
-  if (error || !created) return { ok: false, error: error?.message ?? "Could not save the prompt." };
-
-  const id = created.id as string;
+  // Generate the id here and insert without RETURNING. A RETURNING clause is
+  // checked against the SELECT policy, whose owner/editor lookup runs on the
+  // statement's snapshot and can't yet see the row being inserted, so private
+  // prompts would be rejected with "new row violates row-level security".
+  const id = crypto.randomUUID();
+  const { error } = await supabase.from("prompts").insert({
+    id,
+    title: d.title,
+    description: d.description,
+    body: d.body,
+    audience: d.audience,
+    visibility: d.visibility,
+    owner_id: uid,
+    parent_id: parentId,
+    fork_note: parentId ? d.forkNote : "",
+  });
+  if (error) return { ok: false, error: error.message };
   const appsRes = await supabase
     .from("prompt_apps")
     .insert(d.apps.map((a) => ({ prompt_id: id, app: a.app, surfaces: a.surfaces })));

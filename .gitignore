@@ -22,3 +22,4 @@ supabase/.env
 # misc
 .DS_Store
 *.tsbuildinfo
+.env*

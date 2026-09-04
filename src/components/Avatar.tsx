@@ -1,4 +1,4 @@
-import { avatarSrc, maskFor } from "@/lib/people";
+import { initialsAvatar, maskFor } from "@/lib/people";
 import type { Person } from "@/lib/types";
 
 interface Props {
@@ -7,13 +7,17 @@ interface Props {
   className?: string;
 }
 
-/** Headshot masked with one of Terra's organic blob shapes. Never a circle. */
+/**
+ * Headshot masked with one of Terra's organic blob shapes. Never a circle.
+ * People without a Google photo get their initials on a brand tint instead.
+ */
 export function Avatar({ person, size = 26, className }: Props) {
   const mask = `url(${maskFor(person)})`;
+  const src = person.avatarUrl || initialsAvatar(person);
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={avatarSrc(person)}
+      src={src}
       alt=""
       width={size}
       height={size}

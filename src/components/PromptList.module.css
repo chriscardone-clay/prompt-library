@@ -61,9 +61,11 @@
   outline: 2px solid var(--tangerine-300);
   outline-offset: 2px;
 }
-.search input {
+.search input,
+.search input:focus,
+.search input:focus-visible {
   border: 0;
-  outline: 0;
+  outline: none;
   flex: 1;
   font-size: 15px;
   background: transparent;
