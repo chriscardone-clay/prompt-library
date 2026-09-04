@@ -28,7 +28,7 @@ export const metadata: Metadata = {
   title: { default: "Clay prompt library", template: "%s · Clay prompt library" },
   description:
     "Good prompts, shared once. Used everywhere. Find a prompt, fill in the blanks, paste it into Town, Claude, ChatGPT or Claygent.",
-  icons: { icon: "/brand/Clay_Arch_3D.png" },
+  // Icons come from src/app/icon.png, src/app/apple-icon.png and public/favicon.ico.
   robots: { index: false, follow: false },
 };
 
