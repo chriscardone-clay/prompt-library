@@ -22,7 +22,7 @@ interface PromptRow {
   notes: string | null;
   files: unknown;
   links: unknown;
-  audience: string;
+  audiences: string[] | null;
   visibility: string;
   owner_id: string;
   parent_id: string | null;
@@ -37,7 +37,7 @@ interface PromptRow {
 }
 
 const PROMPT_SELECT = `
-  id, kind, title, description, body, notes, files, links, audience, visibility, owner_id, parent_id,
+  id, kind, title, description, body, notes, files, links, audiences, visibility, owner_id, parent_id,
   fork_note, last_edited_by, created_at, updated_at,
   owner:profiles!prompts_owner_id_fkey ( id, email, name, avatar_url ),
   prompt_apps ( app, surfaces ),
@@ -59,7 +59,10 @@ function toPrompt(r: PromptRow): Prompt {
     notes: r.notes ?? "",
     files: asFiles(r.files),
     links: asLinks(r.links),
-    audience: isAudience(r.audience) ? r.audience : "Other",
+    audiences: (() => {
+      const a = (r.audiences ?? []).filter(isAudience);
+      return a.length ? a : ["Other"];
+    })(),
     visibility: isVisibility(r.visibility) ? r.visibility : "public",
     ownerId: r.owner_id,
     owner: toPerson(r.owner),

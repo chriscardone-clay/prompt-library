@@ -27,7 +27,7 @@ export default async function NewPromptPage() {
           files: [],
           links: [],
           apps: [{ app: "Claude", surfaces: [] }],
-          audience: "GTM",
+          audiences: ["GTM"],
           visibility: "public",
           forkNote: "",
           editors: [],

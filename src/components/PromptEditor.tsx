@@ -31,7 +31,11 @@ import { personFromEmail } from "@/lib/people";
 import { parsePlaceholders } from "@/lib/placeholders";
 import { isArchiveName, isSkillMd, parseFrontmatter, titleFromSlug } from "@/lib/skills";
 import type { Person, PromptApp, PromptDraft, SkillFile } from "@/lib/types";
-import { unzip } from "@/lib/zip";
+import { isBinaryName, looksBinary, unzip } from "@/lib/zip";
+
+/** Mirrors the server-side cap on a skill's text (see actions.ts). */
+const MAX_FILES_TOTAL = 400_000;
+const fmtKb = (n: number) => `${Math.round(n / 1024).toLocaleString()} KB`;
 import { Avatar } from "./Avatar";
 import { Chip } from "./Chip";
 import { useToast } from "./Toast";
@@ -84,17 +88,25 @@ export function PromptEditor({
   const keys = useMemo(() => parsePlaceholders(d.body), [d.body]);
   const isOwner = owner.id === me.id;
   const hasUrl = d.links.some((l) => l.url.trim());
+  const filesTotal = d.files.reduce((n, f) => n + f.content.length, 0);
+  const overLimit = isSkill && filesTotal > MAX_FILES_TOTAL;
   const valid =
     d.title.trim().length > 0 &&
     (isSkill ? d.files.length > 0 || hasUrl : d.body.trim().length > 0) &&
-    d.apps.length > 0;
+    d.apps.length > 0 &&
+    d.audiences.length > 0 &&
+    !overLimit;
   const hint = valid
     ? ""
-    : !d.apps.length
-      ? "Pick at least one tool."
-      : isSkill
-        ? "Add a title and at least one file or link."
-        : "Add a title and a prompt to continue.";
+    : overLimit
+      ? `Files are ${fmtKb(filesTotal)} in total; the limit is ${fmtKb(MAX_FILES_TOTAL)}. Remove or trim some files.`
+      : !d.apps.length
+        ? "Pick at least one tool."
+        : !d.audiences.length
+          ? "Pick at least one team."
+          : isSkill
+            ? "Add a title and at least one file or link."
+            : "Add a title and a prompt to continue.";
 
   const peopleByEmail = useMemo(() => {
     const m = new Map<string, Person>();
@@ -144,16 +156,29 @@ export function PromptEditor({
     if (!list.length) return;
     const archives = list.filter((f) => isArchiveName(f.name)).length;
     try {
+      const skipped: string[] = [];
       const groups = await Promise.all(
-        list.map((f) =>
-          isArchiveName(f.name)
-            ? f.arrayBuffer().then(unzip)
-            : f.text().then((content) => [{ name: f.name, content }]),
-        ),
+        list.map(async (f): Promise<SkillFile[]> => {
+          if (isArchiveName(f.name)) {
+            const r = await unzip(await f.arrayBuffer());
+            skipped.push(...r.skipped);
+            return r.files;
+          }
+          const bytes = new Uint8Array(await f.arrayBuffer());
+          if (isBinaryName(f.name) || looksBinary(bytes)) {
+            skipped.push(f.name);
+            return [];
+          }
+          return [{ name: f.name, content: new TextDecoder().decode(bytes) }];
+        }),
       );
       const added = groups.flat();
       if (!added.length) {
-        show("No files found in that archive");
+        show(
+          skipped.length
+            ? "Nothing to add: those files aren't text (fonts, images…). Skills here hold text files only."
+            : "No files found in that archive",
+        );
         return;
       }
       setD((cur) => {
@@ -176,10 +201,13 @@ export function PromptEditor({
         setFileIdx(idx);
         return { ...cur, ...patch, files: merged };
       });
+      const addedMsg = archives
+        ? `Unpacked ${added.length} file${added.length === 1 ? "" : "s"} from .skill`
+        : `Added ${added.length} file${added.length === 1 ? "" : "s"}`;
       show(
-        archives
-          ? `Unpacked ${added.length} file${added.length === 1 ? "" : "s"} from .skill`
-          : `Added ${added.length} file${added.length === 1 ? "" : "s"}`,
+        skipped.length
+          ? `${addedMsg}. Skipped ${skipped.length} binary file${skipped.length === 1 ? "" : "s"} (fonts, images): skills here hold text only.`
+          : addedMsg,
       );
     } catch {
       show("Could not read that file");
@@ -215,16 +243,25 @@ export function PromptEditor({
     if (!valid || pending) return;
     setError(null);
     start(async () => {
-      const res =
-        mode === "edit" && promptId
-          ? await updatePrompt(promptId, d)
-          : await createPrompt(d, mode === "fork" ? promptId ?? null : null);
-      if (!res.ok) {
-        setError(res.error);
-        return;
+      try {
+        const res =
+          mode === "edit" && promptId
+            ? await updatePrompt(promptId, d)
+            : await createPrompt(d, mode === "fork" ? promptId ?? null : null);
+        if (!res.ok) {
+          setError(res.error);
+          return;
+        }
+        const toast = mode === "edit" ? "saved" : mode === "fork" ? "forked" : isSkill ? "published-skill" : "published";
+        router.push(`/prompts/${res.data.id}?toast=${toast}`);
+      } catch {
+        // A thrown action (network, payload too large) shouldn't take down the page.
+        setError(
+          isSkill
+            ? "Couldn't save. The skill may be too large to send; remove some files and try again."
+            : "Couldn't save. Check your connection and try again.",
+        );
       }
-      const toast = mode === "edit" ? "saved" : mode === "fork" ? "forked" : isSkill ? "published-skill" : "published";
-      router.push(`/prompts/${res.data.id}?toast=${toast}`);
     });
   };
 
@@ -313,8 +350,9 @@ export function PromptEditor({
               <div className="field">
                 <div className={styles.bodyHead}>
                   <span className="eyebrow">Files</span>
-                  <span className="tiny muted">
+                  <span className={`tiny ${overLimit ? styles.error : "muted"}`}>
                     {d.files.length} file{d.files.length === 1 ? "" : "s"}
+                    {d.files.length ? ` · ${fmtKb(filesTotal)} of ${fmtKb(MAX_FILES_TOTAL)}` : ""}
                   </span>
                 </div>
                 <div className={skillStyles.editorFiles}>
@@ -538,15 +576,24 @@ export function PromptEditor({
             </div>
 
             <div className={styles.group}>
-              <span className="eyebrow">Audience</span>
+              <div className="stack" style={{ gap: 2 }}>
+                <span className="eyebrow">Audience</span>
+                <span className="tiny muted">Pick every team this is for.</span>
+              </div>
               <div className={styles.chips}>
                 {AUDIENCES.map((a: Audience) => (
                   <Chip
                     key={a}
                     label={a}
                     size="lg"
-                    selected={d.audience === a}
-                    onClick={() => upd({ audience: a })}
+                    selected={d.audiences.includes(a)}
+                    onClick={() =>
+                      upd({
+                        audiences: d.audiences.includes(a)
+                          ? d.audiences.filter((x) => x !== a)
+                          : [...d.audiences, a],
+                      })
+                    }
                   />
                 ))}
               </div>

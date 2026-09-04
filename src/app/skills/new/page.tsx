@@ -28,7 +28,7 @@ export default async function NewSkillPage() {
           files: [{ name: "SKILL.md", content: SKILL_TEMPLATE }],
           links: [],
           apps: [{ app: "Claude", surfaces: [] }],
-          audience: "GTM",
+          audiences: ["GTM"],
           visibility: "public",
           forkNote: "",
           editors: [],

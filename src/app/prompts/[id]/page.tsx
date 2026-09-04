@@ -75,7 +75,9 @@ export default async function PromptPage({ params }: { params: Params }) {
               {prompt.apps.map((a) => (
                 <AppTag key={a.app} app={a} />
               ))}
-              <AudienceTag audience={prompt.audience} />
+              {prompt.audiences.map((a) => (
+                <AudienceTag key={a} audience={a} />
+              ))}
               {prompt.visibility === "private" ? <PrivateTag /> : null}
             </div>
             <h1 className="display-lg">{prompt.title}</h1>

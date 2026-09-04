@@ -111,7 +111,7 @@ export function PromptList({ view, prompts, allPrompts, me }: Props) {
         ),
       );
     }
-    if (aud !== "All") out = out.filter((p) => p.audience === aud);
+    if (aud !== "All") out = out.filter((p) => p.audiences.includes(aud));
     if (needle) {
       out = out.filter((p) =>
         [p.title, p.description, p.body, ...p.files.map((f) => `${f.name} ${f.content}`)]
@@ -288,7 +288,9 @@ function PromptCard({ prompt: p, forks, meId }: { prompt: Prompt; forks: number;
         {p.apps.map((a) => (
           <AppTag key={a.app} app={a} />
         ))}
-        <AudienceTag audience={p.audience} light />
+        {p.audiences.map((a) => (
+          <AudienceTag key={a} audience={a} light />
+        ))}
         {p.parentId ? <ForkTag /> : null}
         <div className="grow" />
         {p.visibility === "private" ? (

@@ -48,7 +48,8 @@ export interface Prompt {
   notes: string;
   files: SkillFile[];
   links: SkillLink[];
-  audience: Audience;
+  /** Teams this is for; at least one. */
+  audiences: Audience[];
   visibility: Visibility;
   ownerId: string;
   owner: Person;
@@ -105,7 +106,7 @@ export interface PromptDraft {
   files: SkillFile[];
   links: SkillLink[];
   apps: PromptApp[];
-  audience: Audience;
+  audiences: Audience[];
   visibility: Visibility;
   forkNote: string;
   editors: string[]; // emails

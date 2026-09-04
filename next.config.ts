@@ -24,6 +24,14 @@ const nextConfig: NextConfig = {
     // Avatars come from Google; we render them with a plain <img> so no loader config is needed.
     unoptimized: true,
   },
+  experimental: {
+    serverActions: {
+      // Skill bundles are capped at 400 KB of text server-side; give the
+      // action some headroom so oversize drafts get a friendly error rather
+      // than a transport failure.
+      bodySizeLimit: "2mb",
+    },
+  },
   async headers() {
     return [
       {

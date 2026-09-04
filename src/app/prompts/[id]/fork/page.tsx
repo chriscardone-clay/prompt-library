@@ -32,7 +32,7 @@ export default async function ForkPromptPage({ params }: { params: Promise<{ id:
           files: parent.files.map((f) => ({ ...f })),
           links: parent.links.map((l) => ({ ...l })),
           apps: parent.apps,
-          audience: parent.audience,
+          audiences: parent.audiences,
           visibility: "public",
           forkNote: "",
           editors: [],

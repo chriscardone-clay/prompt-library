@@ -68,11 +68,33 @@ async function inflateRaw(bytes: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(await new Response(ds.readable).arrayBuffer());
 }
 
+/** Extensions that are never text. Checked before sniffing bytes. */
+const BINARY_EXT =
+  /\.(ttf|otf|woff2?|eot|png|jpe?g|gif|webp|bmp|ico|icns|pdf|zip|gz|tgz|tar|7z|rar|mp3|mp4|mov|wav|m4a|bin|exe|dll|so|dylib|class|jar|pyc|db|sqlite|psd|ai|sketch|fig|docx|xlsx|pptx)$/i;
+
+export function isBinaryName(name: string): boolean {
+  return BINARY_EXT.test(name);
+}
+
+/** A NUL byte in the first 8 KB is a reliable sign the file isn't text. */
+export function looksBinary(bytes: Uint8Array): boolean {
+  const n = Math.min(bytes.length, 8000);
+  for (let i = 0; i < n; i++) if (bytes[i] === 0) return true;
+  return false;
+}
+
+export interface UnzipResult {
+  files: SkillFile[];
+  /** Entries left out because they aren't text (fonts, images, archives…). */
+  skipped: string[];
+}
+
 /**
- * Read text files out of a zip. Skips folders, __MACOSX and .DS_Store. If
- * every entry sits inside one top-level folder, that folder is stripped.
+ * Read text files out of a zip. Skips folders, __MACOSX, .DS_Store and
+ * binary files (reported in `skipped`). If every entry sits inside one
+ * top-level folder, that folder is stripped.
  */
-export async function unzip(buf: ArrayBuffer): Promise<SkillFile[]> {
+export async function unzip(buf: ArrayBuffer): Promise<UnzipResult> {
   const b = new Uint8Array(buf);
   const dv = new DataView(buf);
   const dec = new TextDecoder();
@@ -87,6 +109,7 @@ export async function unzip(buf: ArrayBuffer): Promise<SkillFile[]> {
   const count = dv.getUint16(eocd + 10, true);
   let off = dv.getUint32(eocd + 16, true);
   const out: SkillFile[] = [];
+  const skipped: string[] = [];
   for (let n = 0; n < count; n++) {
     if (dv.getUint32(off, true) !== 0x02014b50) break;
     const method = dv.getUint16(off + 10, true);
@@ -98,20 +121,34 @@ export async function unzip(buf: ArrayBuffer): Promise<SkillFile[]> {
     const name = dec.decode(b.subarray(off + 46, off + 46 + nlen));
     off += 46 + nlen + elen + clen;
     if (name.endsWith("/") || name.startsWith("__MACOSX") || /(^|\/)\.DS_Store$/.test(name)) continue;
+    if (isBinaryName(name)) {
+      skipped.push(name);
+      continue;
+    }
     const lnlen = dv.getUint16(lho + 26, true);
     const lelen = dv.getUint16(lho + 28, true);
     const start = lho + 30 + lnlen + lelen;
     let data: Uint8Array = b.subarray(start, start + csize);
     if (method === 8) data = await inflateRaw(data);
-    else if (method !== 0) continue;
+    else if (method !== 0) {
+      skipped.push(name);
+      continue;
+    }
+    if (looksBinary(data)) {
+      skipped.push(name);
+      continue;
+    }
     out.push({ name, content: dec.decode(data) });
   }
-  const roots = new Set(out.map((f) => f.name.split("/")[0]));
-  const strip = roots.size === 1 && out.every((f) => f.name.includes("/"));
-  return out.map((f) => ({
-    name: strip ? f.name.slice(f.name.indexOf("/") + 1) : f.name,
-    content: f.content,
-  }));
+  // Strip a single shared top-level folder (e.g. "clay-charts/SKILL.md" → "SKILL.md").
+  const all = [...out.map((f) => f.name), ...skipped];
+  const roots = new Set(all.map((n) => n.split("/")[0]));
+  const strip = roots.size === 1 && all.every((n) => n.includes("/"));
+  const stripName = (n: string) => (strip ? n.slice(n.indexOf("/") + 1) : n);
+  return {
+    files: out.map((f) => ({ name: stripName(f.name), content: f.content })),
+    skipped: skipped.map(stripName),
+  };
 }
 
 /** Trigger a browser download of a Blob. */

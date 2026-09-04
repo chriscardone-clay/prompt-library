@@ -31,7 +31,7 @@ export default async function EditPromptPage({ params }: { params: Promise<{ id:
           files: prompt.files.map((f) => ({ ...f })),
           links: prompt.links.map((l) => ({ ...l })),
           apps: prompt.apps,
-          audience: prompt.audience,
+          audiences: prompt.audiences,
           visibility: prompt.visibility,
           forkNote: prompt.forkNote,
           editors: prompt.editors.map((e) => e.email.toLowerCase()),

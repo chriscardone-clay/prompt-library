@@ -156,7 +156,8 @@ function normaliseDraft(input: PromptDraft): ActionResult<PromptDraft> {
   }
   if (!apps.length) return { ok: false, error: "Pick at least one tool." };
 
-  if (!isAudience(input.audience)) return { ok: false, error: "Pick an audience." };
+  const audiences = Array.from(new Set((input.audiences ?? []).filter(isAudience)));
+  if (!audiences.length) return { ok: false, error: "Pick at least one team." };
   if (!isVisibility(input.visibility)) return { ok: false, error: "Pick a visibility." };
 
   const editors = Array.from(
@@ -179,7 +180,7 @@ function normaliseDraft(input: PromptDraft): ActionResult<PromptDraft> {
       files,
       links,
       apps,
-      audience: input.audience,
+      audiences,
       visibility: input.visibility,
       forkNote: (input.forkNote ?? "").trim().slice(0, 600),
       editors,
@@ -217,7 +218,7 @@ export async function createPrompt(
     notes: d.notes,
     files: d.files,
     links: d.links,
-    audience: d.audience,
+    audiences: d.audiences,
     visibility: d.visibility,
     owner_id: uid,
     parent_id: parentId,
@@ -270,7 +271,7 @@ export async function updatePrompt(
       notes: d.notes,
       files: d.files,
       links: d.links,
-      audience: d.audience,
+      audiences: d.audiences,
       visibility: d.visibility,
     })
     .eq("id", id);
