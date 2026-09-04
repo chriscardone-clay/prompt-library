@@ -92,7 +92,7 @@ npm run dev
 
 | | |
 | --- | --- |
-| App | https://prompt-library-clay-run-df4af71e.vercel.app (Vercel team `clay-run`, project `prompt-library`, auto-deploys from `main`) |
+| App | https://www.clayprompts.com (Vercel team `clay-run`, project `prompt-library`, auto-deploys from `main`; the apex and the old prompts.artificialchill.com redirect here) |
 | Database | Supabase project `prompt-library` (ref `rtaubwokdmmpokhjbyyp`) in the Clay org, us-east-1 |
 | Repo | https://github.com/chriscardone-clay/prompt-library |
 
