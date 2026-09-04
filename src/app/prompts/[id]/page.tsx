@@ -8,7 +8,11 @@ import { FeedbackSection } from "@/components/FeedbackSection";
 import { Header } from "@/components/Header";
 import { PromptBody } from "@/components/PromptBody";
 import { PromptNotes } from "@/components/PromptNotes";
-import { AppTag, AudienceTag, PrivateTag } from "@/components/Tag";
+import { SkillFiles } from "@/components/SkillFiles";
+import { SkillInstall } from "@/components/SkillInstall";
+import { SkillLinks } from "@/components/SkillLinks";
+import { AppTag, AudienceTag, PrivateTag, SkillTag } from "@/components/Tag";
+import { skillSlug } from "@/lib/skills";
 import { ToastFromQuery } from "@/components/Toast";
 import { VariantsTree } from "@/components/VariantsTree";
 import { VersionHistory } from "@/components/VersionHistory";
@@ -59,7 +63,7 @@ export default async function PromptPage({ params }: { params: Params }) {
       </Suspense>
 
       <section className={styles.section}>
-        <Link href="/" className="back-link">
+        <Link href={prompt.kind === "skill" ? "/?kind=skills" : "/"} className="back-link">
           <ArrowLeft weight="bold" size={13} />
           Back
         </Link>
@@ -67,6 +71,7 @@ export default async function PromptPage({ params }: { params: Params }) {
         <div className={styles.head}>
           <div className={styles.headMain}>
             <div className={styles.tags}>
+              {prompt.kind === "skill" ? <SkillTag /> : null}
               {prompt.apps.map((a) => (
                 <AppTag key={a.app} app={a} />
               ))}
@@ -119,12 +124,20 @@ export default async function PromptPage({ params }: { params: Params }) {
 
         <div className={styles.columns}>
           <div className={styles.main}>
-            <PromptBody promptId={prompt.id} body={prompt.body} />
+            {prompt.kind === "skill" ? (
+              <>
+                <SkillLinks links={prompt.links} />
+                <SkillFiles files={prompt.files} slug={skillSlug(prompt.title, prompt.files)} />
+                {prompt.files.length ? <SkillInstall apps={prompt.apps} /> : null}
+              </>
+            ) : (
+              <PromptBody promptId={prompt.id} body={prompt.body} />
+            )}
             <PromptNotes notes={prompt.notes} />
           </div>
 
           <aside className={styles.side}>
-            <VariantsTree nodes={nodes} currentId={prompt.id} />
+            <VariantsTree nodes={nodes} currentId={prompt.id} noun={prompt.kind} />
 
             <div className="slab" style={{ gap: 12 }}>
               <div className="eyebrow">Who can edit</div>

@@ -7,7 +7,7 @@ import { ToastFromQuery } from "@/components/Toast";
 import { canEdit, getCurrentUser, listPrompts } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "My prompts" };
+export const metadata: Metadata = { title: "My library" };
 
 export default async function MinePage() {
   const user = await getCurrentUser();

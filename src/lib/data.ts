@@ -3,6 +3,7 @@ import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { isApp, isAudience, isVisibility } from "./constants";
 import { personFromEmail, personFromProfile, UNKNOWN_PERSON } from "./people";
+import { asFiles, asLinks } from "./skills";
 import type { Feedback, Person, Profile, Prompt, PromptNode, PromptVersion } from "./types";
 
 // ── Row shapes returned by PostgREST embeds ─────────────────────────
@@ -14,10 +15,13 @@ interface ProfileRow {
 }
 interface PromptRow {
   id: string;
+  kind: string | null;
   title: string;
   description: string;
   body: string;
   notes: string | null;
+  files: unknown;
+  links: unknown;
   audience: string;
   visibility: string;
   owner_id: string;
@@ -33,7 +37,7 @@ interface PromptRow {
 }
 
 const PROMPT_SELECT = `
-  id, title, description, body, notes, audience, visibility, owner_id, parent_id,
+  id, kind, title, description, body, notes, files, links, audience, visibility, owner_id, parent_id,
   fork_note, last_edited_by, created_at, updated_at,
   owner:profiles!prompts_owner_id_fkey ( id, email, name, avatar_url ),
   prompt_apps ( app, surfaces ),
@@ -48,10 +52,13 @@ function toPerson(p: ProfileRow | null | undefined): Person {
 function toPrompt(r: PromptRow): Prompt {
   return {
     id: r.id,
+    kind: r.kind === "skill" ? "skill" : "prompt",
     title: r.title,
     description: r.description ?? "",
     body: r.body,
     notes: r.notes ?? "",
+    files: asFiles(r.files),
+    links: asLinks(r.links),
     audience: isAudience(r.audience) ? r.audience : "Other",
     visibility: isVisibility(r.visibility) ? r.visibility : "public",
     ownerId: r.owner_id,
@@ -157,7 +164,7 @@ export async function listVersions(promptId: string): Promise<PromptVersion[]> {
   const { data, error } = await supabase
     .from("prompt_versions")
     .select(
-      `id, prompt_id, title, description, body, saved_at,
+      `id, prompt_id, title, description, body, files, links, saved_at,
        saved_by:profiles!prompt_versions_saved_by_fkey ( id, email, name, avatar_url )`,
     )
     .eq("prompt_id", promptId)
@@ -169,6 +176,8 @@ export async function listVersions(promptId: string): Promise<PromptVersion[]> {
     title: string;
     description: string;
     body: string;
+    files: unknown;
+    links: unknown;
     saved_at: string;
     saved_by: ProfileRow | null;
   };
@@ -178,6 +187,8 @@ export async function listVersions(promptId: string): Promise<PromptVersion[]> {
     title: r.title,
     description: r.description ?? "",
     body: r.body,
+    files: asFiles(r.files),
+    links: asLinks(r.links),
     savedAt: r.saved_at,
     savedBy: r.saved_by ? personFromProfile(r.saved_by) : null,
   }));

@@ -54,6 +54,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
 const QUERY_TOASTS: Record<string, string> = {
   published: "Prompt published",
+  "published-skill": "Skill published",
   saved: "Changes saved",
   forked: "Fork created",
   restored: "Version restored",

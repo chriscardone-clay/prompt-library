@@ -77,10 +77,41 @@ insert into public.prompts (id, title, description, body, audience, visibility, 
    'Write a three-line note to {{first_name}}, who just started as {{new_title}} at {{company}}. Line 1: congratulate without flattery. Line 2: one specific thing about {{company}}. Line 3: a low-pressure ask. No subject line.',
    'GTM', 'public', '44444444-4444-4444-4444-444444444444', null, '', '44444444-4444-4444-4444-444444444444', now() - interval '3 days', now() - interval '3 days');
 
+-- Skills (kind = 'skill'): files/links live as JSON; body mirrors SKILL.md.
+insert into public.prompts (id, kind, title, description, body, files, links, audience, visibility, owner_id, last_edited_by, created_at, updated_at) values
+  ('b0000000-0000-0000-0000-000000000001', 'skill', 'Clay formulas',
+   'Teaches the model Clay’s formula syntax: JavaScript expressions, column references, common transforms.',
+   E'---\nname: clay-formulas\ndescription: Write Clay table formulas using JavaScript expression syntax. Use when a user needs to transform, score, or extract data in a Clay column.\n---\n\n# Clay formulas\n\nClay formulas are single JavaScript expressions. No statements, no semicolons, no variable declarations.\n\n## Rules\n\n- Reference columns with double curly braces around the column name.\n- Return a value; do not write `return`.\n- Use optional chaining for nested JSON.\n- Ternaries for branching. Chain `.map` / `.filter` / `.join` for arrays.\n\n## Patterns\n\nSee examples.md for scoring, extraction, and formatting recipes.\n',
+   jsonb_build_array(
+     jsonb_build_object('name', 'SKILL.md', 'content', E'---\nname: clay-formulas\ndescription: Write Clay table formulas using JavaScript expression syntax. Use when a user needs to transform, score, or extract data in a Clay column.\n---\n\n# Clay formulas\n\nClay formulas are single JavaScript expressions. No statements, no semicolons, no variable declarations.\n\n## Rules\n\n- Reference columns with double curly braces around the column name.\n- Return a value; do not write `return`.\n- Use optional chaining for nested JSON.\n- Ternaries for branching. Chain `.map` / `.filter` / `.join` for arrays.\n\n## Patterns\n\nSee examples.md for scoring, extraction, and formatting recipes.\n'),
+     jsonb_build_object('name', 'examples.md', 'content', E'# Examples\n\n## Score an account\n\n`({{Employees}} > 200 ? 2 : 1) + ({{Industry}} === "Software" ? 2 : 0)`\n\n## First name from full name\n\n`{{Full Name}}.split(" ")[0]`\n\n## Join a list\n\n`{{Tech Stack}}.filter(Boolean).join(", ")`\n')
+   ),
+   '[]'::jsonb, 'GTM', 'public', '11111111-1111-1111-1111-111111111111', '11111111-1111-1111-1111-111111111111', now() - interval '20 days', now() - interval '4 days'),
+  ('b0000000-0000-0000-0000-000000000002', 'skill', 'Slack customer recap',
+   'Turns a transcript into a customer-facing Slack recap with the standard section headers.',
+   E'---\nname: slack-customer-recap\ndescription: Generate customer-facing Slack recap messages from meeting transcripts. Use when asked for a Slack recap, channel recap, or meeting follow-up.\n---\n\n# Slack customer recap\n\n1. Read the transcript. Pull decisions, action items with owners, open questions.\n2. Write in Clay’s voice: warm, direct, sentence case, no emoji in body copy.\n3. Use the section template in template.md.\n4. Keep it under 200 words.\n',
+   jsonb_build_array(
+     jsonb_build_object('name', 'SKILL.md', 'content', E'---\nname: slack-customer-recap\ndescription: Generate customer-facing Slack recap messages from meeting transcripts. Use when asked for a Slack recap, channel recap, or meeting follow-up.\n---\n\n# Slack customer recap\n\n1. Read the transcript. Pull decisions, action items with owners, open questions.\n2. Write in Clay’s voice: warm, direct, sentence case, no emoji in body copy.\n3. Use the section template in template.md.\n4. Keep it under 200 words.\n'),
+     jsonb_build_object('name', 'template.md', 'content', E'*Recap*\n> • \n\n*Action items*\n> • Owner — item — date\n\n*Next steps*\n> • \n')
+   ),
+   jsonb_build_array(jsonb_build_object('label', 'Claude project', 'url', 'https://claude.ai/project/slack-customer-recap')),
+   'GS', 'public', '33333333-3333-3333-3333-333333333333', '33333333-3333-3333-3333-333333333333', now() - interval '11 days', now() - interval '11 days'),
+  ('b0000000-0000-0000-0000-000000000003', 'skill', 'Deal desk assistant',
+   'Custom GPT that answers pricing, discount, and approval questions from the deal desk playbook.',
+   '', '[]'::jsonb,
+   jsonb_build_array(
+     jsonb_build_object('label', 'Open the GPT', 'url', 'https://chatgpt.com/g/g-deal-desk-assistant'),
+     jsonb_build_object('label', 'Playbook source', 'url', 'https://docs.google.com/document/d/deal-desk-playbook')
+   ),
+   'GTM', 'public', '44444444-4444-4444-4444-444444444444', '44444444-4444-4444-4444-444444444444', now() - interval '5 days', now() - interval '1 day');
+
 alter table public.prompts enable trigger prompts_before_update;
 alter table public.prompts enable trigger prompts_before_insert;
 
 insert into public.prompt_apps (prompt_id, app, surfaces) values
+  ('b0000000-0000-0000-0000-000000000001', 'Claude',   '{Code,Cowork}'),
+  ('b0000000-0000-0000-0000-000000000002', 'Claude',   '{Code,Cowork}'),
+  ('b0000000-0000-0000-0000-000000000003', 'ChatGPT',  '{Chat,Work}'),
   ('a0000000-0000-0000-0000-000000000001', 'Claude',   '{Chat}'),
   ('a0000000-0000-0000-0000-000000000002', 'Claude',   '{Chat,Cowork}'),
   ('a0000000-0000-0000-0000-000000000003', 'ChatGPT',  '{Chat}'),

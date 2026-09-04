@@ -1,4 +1,4 @@
-import type { App, Audience, Visibility } from "./constants";
+import type { App, Audience, Kind, Visibility } from "./constants";
 
 export interface Profile {
   id: string;
@@ -25,13 +25,29 @@ export interface PromptEditor {
   profile: Profile | null;
 }
 
+/** A text file inside a skill bundle (SKILL.md, references, templates). */
+export interface SkillFile {
+  name: string;
+  content: string;
+}
+
+/** Where a skill lives in its home app (a Claude project, a custom GPT, a Town agent). */
+export interface SkillLink {
+  label: string;
+  url: string;
+}
+
 export interface Prompt {
   id: string;
+  kind: Kind;
   title: string;
   description: string;
+  /** Prompt text; for skills, the SKILL.md content (or empty for link-only skills). */
   body: string;
   /** Optional "How to use" guidance: when to use it, tips, connectors it needs. */
   notes: string;
+  files: SkillFile[];
+  links: SkillLink[];
   audience: Audience;
   visibility: Visibility;
   ownerId: string;
@@ -52,6 +68,8 @@ export interface PromptVersion {
   title: string;
   description: string;
   body: string;
+  files: SkillFile[];
+  links: SkillLink[];
   savedAt: string;
   savedBy: Person | null;
 }
@@ -79,10 +97,13 @@ export interface PromptNode {
 }
 
 export interface PromptDraft {
+  kind: Kind;
   title: string;
   description: string;
   body: string;
   notes: string;
+  files: SkillFile[];
+  links: SkillLink[];
   apps: PromptApp[];
   audience: Audience;
   visibility: Visibility;

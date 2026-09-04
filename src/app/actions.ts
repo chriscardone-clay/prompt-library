@@ -11,7 +11,8 @@ import {
 } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/server";
 import { getRequestOrigin } from "@/lib/site";
-import type { PromptApp, PromptDraft } from "@/lib/types";
+import { linkHost, skillMd } from "@/lib/skills";
+import type { PromptApp, PromptDraft, SkillFile, SkillLink } from "@/lib/types";
 
 export type ActionResult<T = undefined> =
   | { ok: true; data: T }
@@ -79,15 +80,69 @@ async function requireUser() {
   return { supabase, uid, email };
 }
 
+const MAX_FILES = 40;
+const MAX_FILE_NAME = 120;
+const MAX_FILES_TOTAL = 400_000;
+const MAX_LINKS = 20;
+
 function normaliseDraft(input: PromptDraft): ActionResult<PromptDraft> {
+  const kind = input.kind === "skill" ? "skill" : "prompt";
   const title = (input.title ?? "").trim();
   const description = (input.description ?? "").trim();
-  const body = (input.body ?? "").replace(/\r\n/g, "\n");
   if (!title) return { ok: false, error: "Add a title." };
   if (title.length > 200) return { ok: false, error: "Title is too long (200 characters max)." };
-  if (!body.trim()) return { ok: false, error: "Add the prompt itself." };
-  if (body.length > 50_000) return { ok: false, error: "Prompt is too long." };
   if (description.length > 600) return { ok: false, error: "Description is too long." };
+
+  // Skill files and links. Prompts carry neither.
+  let files: SkillFile[] = [];
+  let links: SkillLink[] = [];
+  if (kind === "skill") {
+    const seenNames = new Set<string>();
+    let total = 0;
+    for (const f of input.files ?? []) {
+      const name = String(f?.name ?? "")
+        .trim()
+        .replace(/^[/\\]+/, "")
+        .replace(/\\/g, "/");
+      if (!name) continue;
+      if (name.includes("..")) return { ok: false, error: `File name "${name}" isn't allowed.` };
+      if (name.length > MAX_FILE_NAME) return { ok: false, error: "A file name is too long." };
+      const key = name.toLowerCase();
+      if (seenNames.has(key)) return { ok: false, error: `Two files are both named ${name}.` };
+      seenNames.add(key);
+      const content = String(f?.content ?? "").replace(/\r\n/g, "\n");
+      total += content.length;
+      files.push({ name, content });
+    }
+    if (files.length > MAX_FILES) return { ok: false, error: `A skill can hold up to ${MAX_FILES} files.` };
+    if (total > MAX_FILES_TOTAL) return { ok: false, error: "The skill's files are too large (400 KB max in total)." };
+
+    for (const l of input.links ?? []) {
+      const url = String(l?.url ?? "").trim();
+      if (!url) continue;
+      let parsed: URL;
+      try {
+        parsed = new URL(url);
+      } catch {
+        return { ok: false, error: `"${url}" isn't a valid link.` };
+      }
+      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+        return { ok: false, error: "Links must start with http:// or https://." };
+      }
+      const label = String(l?.label ?? "").trim().slice(0, 120) || linkHost(url);
+      links.push({ label, url });
+    }
+    if (links.length > MAX_LINKS) return { ok: false, error: `A skill can hold up to ${MAX_LINKS} links.` };
+    if (!files.length && !links.length) return { ok: false, error: "Add at least one file or link." };
+  } else {
+    files = [];
+    links = [];
+  }
+
+  // For skills the body mirrors SKILL.md so search and history work unchanged.
+  const body = kind === "skill" ? skillMd(files) : (input.body ?? "").replace(/\r\n/g, "\n");
+  if (kind === "prompt" && !body.trim()) return { ok: false, error: "Add the prompt itself." };
+  if (body.length > 50_000) return { ok: false, error: "Prompt is too long." };
   const notes = (input.notes ?? "").replace(/\r\n/g, "\n").trim();
   if (notes.length > 5000) return { ok: false, error: "Notes are too long (5000 characters max)." };
 
@@ -116,10 +171,13 @@ function normaliseDraft(input: PromptDraft): ActionResult<PromptDraft> {
   return {
     ok: true,
     data: {
+      kind,
       title,
       description,
       body,
       notes,
+      files,
+      links,
       apps,
       audience: input.audience,
       visibility: input.visibility,
@@ -152,10 +210,13 @@ export async function createPrompt(
   const id = crypto.randomUUID();
   const { error } = await supabase.from("prompts").insert({
     id,
+    kind: d.kind,
     title: d.title,
     description: d.description,
     body: d.body,
     notes: d.notes,
+    files: d.files,
+    links: d.links,
     audience: d.audience,
     visibility: d.visibility,
     owner_id: uid,
@@ -192,10 +253,13 @@ export async function updatePrompt(
 
   const { data: existing, error: loadErr } = await supabase
     .from("prompts")
-    .select("id, owner_id, owner:profiles!prompts_owner_id_fkey ( email ), prompt_editors ( email )")
+    .select("id, kind, owner_id, owner:profiles!prompts_owner_id_fkey ( email ), prompt_editors ( email )")
     .eq("id", id)
     .maybeSingle();
   if (loadErr || !existing) return { ok: false, error: "Prompt not found." };
+  if ((existing.kind ?? "prompt") !== d.kind) {
+    return { ok: false, error: "A prompt can't be turned into a skill, or the other way round." };
+  }
 
   const { error } = await supabase
     .from("prompts")
@@ -204,6 +268,8 @@ export async function updatePrompt(
       description: d.description,
       body: d.body,
       notes: d.notes,
+      files: d.files,
+      links: d.links,
       audience: d.audience,
       visibility: d.visibility,
     })

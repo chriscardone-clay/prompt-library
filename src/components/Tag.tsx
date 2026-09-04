@@ -1,4 +1,4 @@
-import { GitFork, LockSimple } from "@phosphor-icons/react/dist/ssr";
+import { Files, GitFork, LockSimple } from "@phosphor-icons/react/dist/ssr";
 import { APP_COLORS } from "@/lib/constants";
 import type { PromptApp } from "@/lib/types";
 
@@ -17,6 +17,15 @@ export function AppTag({ app }: { app: PromptApp }) {
 
 export function AudienceTag({ audience, light }: { audience: string; light?: boolean }) {
   return <span className={`tag${light ? " tag-light" : ""}`}>{audience}</span>;
+}
+
+export function SkillTag() {
+  return (
+    <span className="tag" style={{ background: "var(--fg)", color: "var(--oat-100)" }}>
+      <Files weight="bold" size={11} />
+      Skill
+    </span>
+  );
 }
 
 export function ForkTag() {

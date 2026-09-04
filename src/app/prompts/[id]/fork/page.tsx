@@ -6,7 +6,7 @@ import { getCurrentUser, getPrompt } from "@/lib/data";
 import { personFromProfile } from "@/lib/people";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Fork prompt" };
+export const metadata: Metadata = { title: "Fork" };
 
 export default async function ForkPromptPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -24,10 +24,13 @@ export default async function ForkPromptPage({ params }: { params: Promise<{ id:
         promptId={parent.id}
         parentTitle={parent.title}
         initial={{
+          kind: parent.kind,
           title: parent.title,
           description: parent.description,
           body: parent.body,
           notes: parent.notes,
+          files: parent.files.map((f) => ({ ...f })),
+          links: parent.links.map((l) => ({ ...l })),
           apps: parent.apps,
           audience: parent.audience,
           visibility: "public",

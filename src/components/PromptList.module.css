@@ -18,6 +18,43 @@
   gap: 8px;
 }
 
+.controls {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Prompts / Skills toggle: outlined pill group, selected = ink fill. */
+.kindGroup {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  padding: 3px;
+  gap: 2px;
+}
+.kindBtn {
+  background: transparent;
+  color: var(--fg);
+  border: 0;
+  border-radius: var(--radius-pill);
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background 120ms var(--ease), color 120ms var(--ease);
+}
+.kindBtn:hover {
+  background: var(--bg-raised);
+}
+.kindBtn[aria-pressed="true"] {
+  background: var(--fg);
+  color: var(--oat-100);
+}
+.kindBtn[aria-pressed="true"]:hover {
+  background: var(--fg);
+}
+
 .sortGroup {
   display: inline-flex;
   background: var(--bg-raised);
@@ -33,6 +70,7 @@
   padding: 7px 14px;
   font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;
   transition: background 120ms var(--ease), color 120ms var(--ease);
 }
 .sortBtn[aria-pressed="true"] {

@@ -1,0 +1,218 @@
+/* ── Links ("Open it where it lives") ───────────────────────────── */
+.linkGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+.linkCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--oat-100);
+  border: 1px solid var(--warm-line);
+  border-radius: 14px;
+  padding: 12px 14px;
+  color: var(--fg);
+  min-width: 0;
+  transition: background 120ms var(--ease), border-color 120ms var(--ease);
+}
+.linkCard:hover {
+  text-decoration: none;
+  background: var(--white);
+  border-color: var(--fg);
+}
+.linkIcon {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: 10px;
+  background: var(--bg-raised);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg);
+}
+.linkText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.linkLabel {
+  font-weight: 500;
+  font-size: 14px;
+}
+.linkHost {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+/* ── Files viewer ───────────────────────────────────────────────── */
+.fileBar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--grey-line-2);
+  flex-wrap: wrap;
+}
+.fileTab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 12.5px;
+  transition: background 120ms var(--ease), color 120ms var(--ease);
+}
+.fileTab:hover {
+  background: var(--bg-raised);
+}
+.fileTab[aria-pressed="true"] {
+  background: var(--bg-raised);
+  color: var(--fg);
+}
+.fileView {
+  margin: 0;
+  padding: 20px 22px 24px;
+  font-family: var(--font-mono);
+  font-weight: 450;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 560px;
+  overflow: auto;
+  color: var(--fg);
+}
+
+/* ── Install ────────────────────────────────────────────────────── */
+.installList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.installRow {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.installText {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ── Editor: files panel ────────────────────────────────────────── */
+.editorFiles {
+  background: var(--white);
+  border: 1px solid var(--grey-line);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.editorFileBar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--grey-line-2);
+  flex-wrap: wrap;
+}
+.editorFileMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--grey-line-2);
+}
+.fileNameInput {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--grey-line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--oat-100);
+  color: var(--fg);
+}
+.fileEditor {
+  width: 100%;
+  border: 0;
+  padding: 14px 16px;
+  font-family: var(--font-mono);
+  font-weight: 450;
+  font-size: 13px;
+  line-height: 1.6;
+  background: var(--white);
+  color: var(--fg);
+  resize: vertical;
+  outline-offset: -2px;
+  min-height: 320px;
+}
+.noFiles {
+  padding: 28px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.uploadLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--fg);
+  color: var(--oat-100);
+  border-radius: var(--radius-pill);
+  padding: 7px 13px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.uploadLabel:hover {
+  opacity: 0.9;
+}
+.uploadLabel:focus-within {
+  outline: 2px solid var(--tangerine-300);
+  outline-offset: 2px;
+}
+.removeBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  border: 0;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.removeBtn:hover {
+  background: var(--bg-raised);
+  color: var(--fg);
+}
+
+/* ── Editor: links ──────────────────────────────────────────────── */
+.linkRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.linkLabelInput {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.linkUrlInput {
+  flex: 2 1 260px;
+  min-width: 0;
+  font-family: var(--font-mono);
+}

@@ -1,4 +1,4 @@
-import { Plus } from "@phosphor-icons/react/dist/ssr";
+import { Files, Plus } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { Suspense } from "react";
 import type { Profile } from "@/lib/types";
@@ -32,14 +32,20 @@ export function Header({ user, active = null }: Props) {
           className={styles.navLink}
           aria-current={active === "mine" ? "page" : undefined}
         >
-          My prompts
+          My library
         </Link>
       </nav>
       <div className="grow" />
-      <Link href="/prompts/new" className="btn btn-primary">
-        <Plus weight="bold" size={14} />
-        <span className={styles.newLabel}>New prompt</span>
-      </Link>
+      <div className={styles.actions}>
+        <Link href="/skills/new" className="btn btn-outline">
+          <Files weight="bold" size={14} />
+          <span className={styles.newLabel}>New skill</span>
+        </Link>
+        <Link href="/prompts/new" className="btn btn-primary">
+          <Plus weight="bold" size={14} />
+          <span className={styles.newLabel}>New prompt</span>
+        </Link>
+      </div>
       <Suspense fallback={null}>
         <OpenInNewTab className={`icon-btn ${styles.openOut}`} />
       </Suspense>

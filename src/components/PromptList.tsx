@@ -14,20 +14,21 @@ import {
   SORT_LABELS,
   SORTS,
   SURFACES,
+  type Kind,
   type Sort,
 } from "@/lib/constants";
 import { ago, plural } from "@/lib/format";
 import type { Profile, Prompt } from "@/lib/types";
 import { Avatar } from "./Avatar";
 import { Chip } from "./Chip";
-import { AppTag, AudienceTag, ForkTag } from "./Tag";
+import { AppTag, AudienceTag, ForkTag, SkillTag } from "./Tag";
 import { VoteButton } from "./VoteButton";
 import styles from "./PromptList.module.css";
 
 interface Props {
   view: "discover" | "mine";
   prompts: Prompt[];
-  /** Used for fork counts on the My prompts view, where `prompts` is a subset. */
+  /** Used for fork counts on the My library view, where `prompts` is a subset. */
   allPrompts?: Prompt[];
   me: Profile;
 }
@@ -79,6 +80,8 @@ export function PromptList({ view, prompts, allPrompts, me }: Props) {
     }, 250);
   };
 
+  // Discover shows one kind at a time; My library shows everything you own or edit.
+  const kind: Kind = params.get("kind") === "skills" ? "skill" : "prompt";
   const appParam = params.get("app") ?? "All";
   const app = isApp(appParam) ? appParam : "All";
   const surface = params.get("surface") ?? "All";
@@ -86,7 +89,6 @@ export function PromptList({ view, prompts, allPrompts, me }: Props) {
   const aud = isAudience(audParam) ? audParam : "All";
   const sortParam = params.get("sort") ?? "top";
   const sort: Sort = isSort(sortParam) ? sortParam : "top";
-
   const setParams = writeUrl;
 
   const forkCounts = useMemo(() => {
@@ -99,7 +101,7 @@ export function PromptList({ view, prompts, allPrompts, me }: Props) {
 
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    let out = prompts;
+    let out = view === "discover" ? prompts.filter((p) => p.kind === kind) : prompts;
     if (app !== "All") {
       out = out.filter((p) =>
         p.apps.some(
@@ -112,7 +114,10 @@ export function PromptList({ view, prompts, allPrompts, me }: Props) {
     if (aud !== "All") out = out.filter((p) => p.audience === aud);
     if (needle) {
       out = out.filter((p) =>
-        `${p.title} ${p.description} ${p.body}`.toLowerCase().includes(needle),
+        [p.title, p.description, p.body, ...p.files.map((f) => `${f.name} ${f.content}`)]
+          .join(" ")
+          .toLowerCase()
+          .includes(needle),
       );
     }
     const t = (s: string) => new Date(s).getTime();
@@ -123,32 +128,58 @@ export function PromptList({ view, prompts, allPrompts, me }: Props) {
       if (sort === "new") return t(b.createdAt) - t(a.createdAt);
       return t(b.updatedAt) - t(a.updatedAt);
     });
-  }, [prompts, q, app, surface, aud, sort]);
+  }, [prompts, view, kind, q, app, surface, aud, sort]);
 
   const surfaces = app !== "All" ? SURFACES[app] : undefined;
+  const title = view === "mine" ? "My library" : kind === "skill" ? "Discover skills" : "Discover prompts";
+  const countLabel =
+    view === "mine"
+      ? `${plural(list.length, "item")} you own or edit`
+      : plural(list.length, kind === "skill" ? "skill" : "prompt");
+  const newHref = view === "discover" && kind === "skill" ? "/skills/new" : "/prompts/new";
+  const newLabel = view === "discover" && kind === "skill" ? "New skill" : "New prompt";
 
   return (
     <section className={styles.section}>
       <div className={styles.titleRow}>
         <div className={styles.titleStack}>
-          <h1 className="display-lg">{view === "mine" ? "My prompts" : "Discover prompts"}</h1>
-          <div className="muted small">
-            {plural(list.length, "prompt")}
-            {view === "mine" ? " you own or edit" : ""}
-          </div>
+          <h1 className="display-lg">{title}</h1>
+          <div className="muted small">{countLabel}</div>
         </div>
-        <div className={styles.sortGroup} role="group" aria-label="Sort">
-          {SORTS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              className={styles.sortBtn}
-              aria-pressed={sort === s}
-              onClick={() => setParams({ sort: s })}
-            >
-              {SORT_LABELS[s]}
-            </button>
-          ))}
+        <div className={styles.controls}>
+          {view === "discover" ? (
+            <div className={styles.kindGroup} role="group" aria-label="Show">
+              <button
+                type="button"
+                className={styles.kindBtn}
+                aria-pressed={kind === "prompt"}
+                onClick={() => setParams({ kind: null })}
+              >
+                Prompts
+              </button>
+              <button
+                type="button"
+                className={styles.kindBtn}
+                aria-pressed={kind === "skill"}
+                onClick={() => setParams({ kind: "skills" })}
+              >
+                Skills
+              </button>
+            </div>
+          ) : null}
+          <div className={styles.sortGroup} role="group" aria-label="Sort">
+            {SORTS.map((s) => (
+              <button
+                key={s}
+                type="button"
+                className={styles.sortBtn}
+                aria-pressed={sort === s}
+                onClick={() => setParams({ sort: s })}
+              >
+                {SORT_LABELS[s]}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -159,8 +190,12 @@ export function PromptList({ view, prompts, allPrompts, me }: Props) {
             type="search"
             value={q}
             onChange={(e) => onQueryChange(e.target.value)}
-            placeholder="Search prompts, descriptions, placeholders…"
-            aria-label="Search prompts"
+            placeholder={
+              kind === "skill" && view === "discover"
+                ? "Search skills, descriptions, files…"
+                : "Search prompts, descriptions, placeholders…"
+            }
+            aria-label="Search"
           />
         </label>
         <div className={styles.filterRows}>
@@ -223,10 +258,12 @@ export function PromptList({ view, prompts, allPrompts, me }: Props) {
           <img src="/icons/Templates.png" alt="" className={styles.emptyIcon} />
           <div className={styles.emptyTitle}>Nothing matches yet</div>
           <div className={styles.emptyText}>
-            Clear a filter, or write the prompt your team keeps asking for.
+            {kind === "skill" && view === "discover"
+              ? "Clear a filter, or share the skill your team keeps rebuilding."
+              : "Clear a filter, or write the prompt your team keeps asking for."}
           </div>
-          <Link href="/prompts/new" className="btn btn-primary">
-            New prompt
+          <Link href={newHref} className="btn btn-primary">
+            {newLabel}
           </Link>
         </div>
       )}
@@ -235,10 +272,19 @@ export function PromptList({ view, prompts, allPrompts, me }: Props) {
 }
 
 function PromptCard({ prompt: p, forks, meId }: { prompt: Prompt; forks: number; meId: string }) {
-  const meta = `updated ${ago(p.updatedAt)}${forks ? ` · ${plural(forks, "fork")}` : ""}`;
+  const parts: string[] = [];
+  if (p.kind === "skill") {
+    if (p.files.length) parts.push(plural(p.files.length, "file"));
+    if (p.links.length) parts.push(plural(p.links.length, "link"));
+  }
+  parts.push(`updated ${ago(p.updatedAt)}`);
+  if (forks) parts.push(plural(forks, "fork"));
+  const meta = parts.join(" · ");
+
   return (
     <article className={styles.card}>
       <div className={styles.cardTags}>
+        {p.kind === "skill" ? <SkillTag /> : null}
         {p.apps.map((a) => (
           <AppTag key={a.app} app={a} />
         ))}

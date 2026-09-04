@@ -56,6 +56,16 @@
   background: var(--bg-raised);
 }
 
+.actions {
+  display: flex;
+  gap: 6px;
+}
+.actions .btn {
+  white-space: nowrap;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
 .openOut {
   padding: 8px;
   border-radius: var(--radius-pill);

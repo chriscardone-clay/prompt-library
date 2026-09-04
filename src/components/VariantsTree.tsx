@@ -7,6 +7,8 @@ import styles from "./VariantsTree.module.css";
 interface Props {
   nodes: PromptNode[];
   currentId: string;
+  /** "prompt" or "skill", for the empty-state copy. */
+  noun?: string;
 }
 
 interface TreeRow {
@@ -39,7 +41,7 @@ function buildTree(nodes: PromptNode[], currentId: string): TreeRow[] {
   return rows;
 }
 
-export function VariantsTree({ nodes, currentId }: Props) {
+export function VariantsTree({ nodes, currentId, noun = "prompt" }: Props) {
   const rows = buildTree(nodes, currentId);
   const forks = Math.max(rows.length - 1, 0);
 
@@ -90,7 +92,7 @@ export function VariantsTree({ nodes, currentId }: Props) {
         </div>
       ) : (
         <div className="muted" style={{ fontSize: 14 }}>
-          No forks yet. Fork this prompt to make your own version. It stays linked here.
+          No forks yet. Fork this {noun} to make your own version. It stays linked here.
         </div>
       )}
     </div>

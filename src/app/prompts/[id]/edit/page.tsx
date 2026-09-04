@@ -6,7 +6,7 @@ import { canEdit, getCurrentUser, getPrompt } from "@/lib/data";
 import { personFromProfile } from "@/lib/people";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Edit prompt" };
+export const metadata: Metadata = { title: "Edit" };
 
 export default async function EditPromptPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -23,10 +23,13 @@ export default async function EditPromptPage({ params }: { params: Promise<{ id:
         mode="edit"
         promptId={prompt.id}
         initial={{
+          kind: prompt.kind,
           title: prompt.title,
           description: prompt.description,
           body: prompt.body,
           notes: prompt.notes,
+          files: prompt.files.map((f) => ({ ...f })),
+          links: prompt.links.map((l) => ({ ...l })),
           apps: prompt.apps,
           audience: prompt.audience,
           visibility: prompt.visibility,

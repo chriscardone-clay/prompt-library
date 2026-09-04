@@ -20,6 +20,7 @@ There is no separate API server. Server Components read through the Supabase cli
 
 - **Discover / My prompts** with search, filter by app (Town, Claude, ChatGPT, Claygent, Monty, Granola; plus surface for Claude/ChatGPT), filter by team, sort by top / newest / recently updated. Filters live in the URL so views are shareable.
 - **How to use** notes on any prompt: when to use it, tips, connectors it needs. Shown under the prompt, never copied with it. Lines starting with `- ` render as bullets; a short line ending in `:` renders as a label.
+- **Skills** live alongside prompts. Discover has a Prompts / Skills toggle (`/?kind=skills`, or `/skills`); My library shows both. A skill is a bundle of text files (SKILL.md plus references) and/or links to where it lives in its home app. The detail page shows file tabs with copy, download, and "Download `<name>.skill`" (a zip of the folder), "Open it where it lives" link cards, and per-app install instructions. The editor supports adding files by hand or uploading a `.skill`/`.zip` (unpacked in the browser; title and description fill in from SKILL.md frontmatter). Skills fork, upvote, take feedback and keep version history like prompts; versions snapshot files and links too.
 - **Fill in the blanks**: `{{placeholders}}` in a prompt body become inputs; the preview updates live and one click copies the filled prompt. Fills persist per prompt in the browser.
 - **Fork**: any prompt can be forked. Forks stay linked; the detail page shows the whole variant tree and the fork note ("what did you change?").
 - **Upvotes** and **feedback** with reply + resolve for owners and editors.
@@ -170,7 +171,7 @@ The domain is read from `NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN` in the app and from `
 
 ```
 profiles          mirrors auth.users (name, email, avatar) via trigger
-prompts           title, description, body, notes (how to use), audience, visibility, owner, parent (fork), fork_note
+prompts           kind (prompt | skill), title, description, body, notes (how to use), files + links (JSON, skills only), audience, visibility, owner, parent (fork), fork_note
 prompt_apps       which tools it's built for + optional surfaces (Claude: Chat/Code/Cowork, ChatGPT: Chat/Codex/Work)
 prompt_editors    invited by email; linked to a profile on first sign-in
 prompt_upvotes    one per user per prompt
