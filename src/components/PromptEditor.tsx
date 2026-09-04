@@ -15,7 +15,7 @@ import {
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPrompt, deletePrompt, updatePrompt } from "@/app/actions";
 import {
   ALLOWED_EMAIL_DOMAIN,
@@ -46,6 +46,7 @@ import { isBinaryName, looksBinary, unzip } from "@/lib/zip";
 import { Avatar } from "./Avatar";
 import { Chip } from "./Chip";
 import { useToast } from "./Toast";
+import { UploadQueue, type QueueItem } from "./UploadQueue";
 import styles from "./PromptEditor.module.css";
 import skillStyles from "./Skill.module.css";
 
@@ -83,7 +84,11 @@ export function PromptEditor({
   const [fileIdx, setFileIdx] = useState(0);
   const [invite, setInvite] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [uploading, setUploading] = useState<string | null>(null);
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const queueTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const uploading = queue.some((i) => i.status !== "done" && i.status !== "failed")
+    ? "Adding files… publish is available once they finish."
+    : null;
   const [pending, start] = useTransition();
   // The row's id is fixed up front so binary uploads can land in its storage
   // folder before the row exists. Editing reuses the real id.
@@ -165,47 +170,103 @@ export function PromptEditor({
     setFileIdx(Math.max(curIdx - 1, 0));
   };
 
+  // Keep the finished queue on screen briefly, then clear it.
+  useEffect(() => {
+    if (!queue.length || uploading) return;
+    queueTimer.current = setTimeout(() => setQueue([]), 2500);
+    return () => {
+      if (queueTimer.current) clearTimeout(queueTimer.current);
+    };
+  }, [queue, uploading]);
+
+  const patchQueue = (id: string, patch: Partial<QueueItem>) =>
+    setQueue((q) => q.map((i) => (i.id === id ? { ...i, ...patch } : i)));
+
   const onUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const list = Array.from(e.target.files ?? []);
     e.target.value = "";
-    if (!list.length) return;
+    if (!list.length || uploading) return;
     const archives = list.filter((f) => isArchiveName(f.name)).length;
+    if (queueTimer.current) clearTimeout(queueTimer.current);
+
+    // One row per picked file; archives expand into their entries as they're read.
+    let seq = 0;
+    const nextId = () => `q${Date.now()}-${seq++}`;
+    const initial: QueueItem[] = list.map((f) => ({
+      id: nextId(),
+      name: f.name,
+      size: f.size,
+      kind: isArchiveName(f.name) ? "archive" : isBinaryName(f.name) ? "binary" : "text",
+      status: "queued",
+      progress: 0,
+    }));
+    setQueue(initial);
+
     try {
-      // Read everything first: text stays inline, binaries go to storage.
+      // Phase 1: read everything. Text stays inline; binaries are queued for storage.
       const texts: SkillFile[] = [];
-      const binaries: { name: string; bytes: Uint8Array; type?: string }[] = [];
-      for (const f of list) {
+      const binaries: { qid: string; name: string; bytes: Uint8Array; type?: string }[] = [];
+      for (let k = 0; k < list.length; k++) {
+        const f = list[k];
+        const row = initial[k];
+        patchQueue(row.id, { status: "reading" });
+        // Let the row paint before a potentially long read.
+        await new Promise((r) => setTimeout(r, 30));
         if (isArchiveName(f.name)) {
           const r = await unzip(await f.arrayBuffer());
+          const entries: QueueItem[] = [
+            ...r.texts.map((t) => ({ id: nextId(), name: t.name, size: fileBytes({ name: t.name, content: t.content }), kind: "text" as const, status: "done" as const, progress: 1 })),
+            ...r.binaries.map((b) => ({ id: nextId(), name: b.name, size: b.bytes.length, kind: "binary" as const, status: "queued" as const, progress: 0 })),
+          ];
           texts.push(...r.texts.map((t) => ({ name: t.name, content: t.content })));
-          binaries.push(...r.binaries);
+          r.binaries.forEach((b, j) => binaries.push({ qid: entries[r.texts.length + j].id, name: b.name, bytes: b.bytes }));
+          // Replace the archive row with its contents.
+          setQueue((q) => q.flatMap((i) => (i.id === row.id ? entries : [i])));
         } else {
           const bytes = new Uint8Array(await f.arrayBuffer());
-          if (isBinaryName(f.name) || looksBinary(bytes)) binaries.push({ name: f.name, bytes, type: f.type || undefined });
-          else texts.push({ name: f.name, content: new TextDecoder().decode(bytes) });
+          if (isBinaryName(f.name) || looksBinary(bytes)) {
+            binaries.push({ qid: row.id, name: f.name, bytes, type: f.type || undefined });
+            patchQueue(row.id, { status: "queued", kind: "binary", size: bytes.length });
+          } else {
+            texts.push({ name: f.name, content: new TextDecoder().decode(bytes) });
+            patchQueue(row.id, { status: "done", kind: "text", progress: 1 });
+          }
         }
       }
       if (!texts.length && !binaries.length) {
+        setQueue([]);
         show("No files found in that archive");
         return;
       }
       const incoming = binaries.reduce((n, b) => n + b.bytes.length, 0) + texts.reduce((n, t) => n + fileBytes(t), 0);
       if (totalBytes + incoming > MAX_SKILL_BYTES) {
+        setQueue([]);
         show(`That would make the skill ${formatBytes(totalBytes + incoming)}; the limit is ${formatBytes(MAX_SKILL_BYTES)}.`);
         return;
       }
 
+      // Phase 2: upload binaries one at a time with byte progress.
       const stored: SkillFile[] = [];
-      for (let i = 0; i < binaries.length; i++) {
-        const b = binaries[i];
-        setUploading(`Uploading ${b.name.split("/").pop()} (${i + 1} of ${binaries.length})…`);
-        const path = await uploadSkillBinary(draftId, b.name, b.bytes, b.type);
-        const entry: SkillFile = { name: b.name, content: "", path, size: b.bytes.length };
-        if (b.type) entry.type = b.type;
-        stored.push(entry);
+      const failures: string[] = [];
+      for (const b of binaries) {
+        patchQueue(b.qid, { status: "uploading", progress: 0 });
+        try {
+          const path = await uploadSkillBinary(draftId, b.name, b.bytes, b.type, (p) => patchQueue(b.qid, { progress: p }));
+          const entry: SkillFile = { name: b.name, content: "", path, size: b.bytes.length };
+          if (b.type) entry.type = b.type;
+          stored.push(entry);
+          patchQueue(b.qid, { status: "done", progress: 1 });
+        } catch (err) {
+          const msg = err instanceof Error && err.message ? err.message : "Upload failed";
+          failures.push(b.name);
+          patchQueue(b.qid, { status: "failed", error: msg });
+        }
       }
-      setUploading(null);
       const added: SkillFile[] = [...texts, ...stored];
+      if (!added.length) {
+        show("Nothing was added: every upload failed. Try again.");
+        return;
+      }
       setD((cur) => {
         // An untouched template gets replaced by an uploaded bundle, not merged into it.
         const isTemplate =
@@ -227,9 +288,10 @@ export function PromptEditor({
         return { ...cur, ...patch, files: merged };
       });
       const n = added.length;
-      show(archives ? `Unpacked ${n} file${n === 1 ? "" : "s"} from .skill` : `Added ${n} file${n === 1 ? "" : "s"}`);
+      const base = archives ? `Unpacked ${n} file${n === 1 ? "" : "s"} from .skill` : `Added ${n} file${n === 1 ? "" : "s"}`;
+      show(failures.length ? `${base}. ${failures.length} upload${failures.length === 1 ? "" : "s"} failed.` : base);
     } catch (err) {
-      setUploading(null);
+      setQueue([]);
       show(err instanceof Error && err.message ? `Upload failed: ${err.message}` : "Could not read that file");
     }
   };
@@ -395,9 +457,9 @@ export function PromptEditor({
                       <Plus weight="bold" size={13} />
                       Add file
                     </button>
-                    <label className={skillStyles.uploadLabel}>
-                      <UploadSimple weight="bold" size={13} />
-                      Upload .skill or files
+                    <label className={skillStyles.uploadLabel} aria-disabled={!!uploading} data-busy={uploading ? "" : undefined}>
+                      {uploading ? <span className={skillStyles.btnSpinner} aria-hidden="true" /> : <UploadSimple weight="bold" size={13} />}
+                      {uploading ? "Adding files…" : "Upload .skill or files"}
                       <input
                         type="file"
                         multiple
@@ -454,6 +516,7 @@ export function PromptEditor({
                     </div>
                   )}
                 </div>
+                {queue.length ? <UploadQueue items={queue} /> : null}
                 <span className="tiny muted">
                   Upload a .skill file and it unpacks into its files here, filling in the title and
                   description from SKILL.md. Text files are editable; fonts, images and other binaries
