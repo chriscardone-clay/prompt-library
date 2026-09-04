@@ -22,6 +22,7 @@ export default async function NewPromptPage() {
           title: "",
           description: "",
           body: "",
+          notes: "",
           apps: [{ app: "Claude", surfaces: [] }],
           audience: "GTM",
           visibility: "public",

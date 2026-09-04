@@ -1,0 +1,40 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+.para {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  margin-top: 4px;
+}
+.label:first-child {
+  margin-top: 0;
+}
+
+.list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.list li {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.list li::marker {
+  color: var(--fg-muted);
+}

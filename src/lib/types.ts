@@ -30,6 +30,8 @@ export interface Prompt {
   title: string;
   description: string;
   body: string;
+  /** Optional "How to use" guidance: when to use it, tips, connectors it needs. */
+  notes: string;
   audience: Audience;
   visibility: Visibility;
   ownerId: string;
@@ -80,6 +82,7 @@ export interface PromptDraft {
   title: string;
   description: string;
   body: string;
+  notes: string;
   apps: PromptApp[];
   audience: Audience;
   visibility: Visibility;

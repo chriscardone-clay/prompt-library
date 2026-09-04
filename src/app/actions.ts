@@ -88,6 +88,8 @@ function normaliseDraft(input: PromptDraft): ActionResult<PromptDraft> {
   if (!body.trim()) return { ok: false, error: "Add the prompt itself." };
   if (body.length > 50_000) return { ok: false, error: "Prompt is too long." };
   if (description.length > 600) return { ok: false, error: "Description is too long." };
+  const notes = (input.notes ?? "").replace(/\r\n/g, "\n").trim();
+  if (notes.length > 5000) return { ok: false, error: "Notes are too long (5000 characters max)." };
 
   const seen = new Set<string>();
   const apps: PromptApp[] = [];
@@ -117,6 +119,7 @@ function normaliseDraft(input: PromptDraft): ActionResult<PromptDraft> {
       title,
       description,
       body,
+      notes,
       apps,
       audience: input.audience,
       visibility: input.visibility,
@@ -152,6 +155,7 @@ export async function createPrompt(
     title: d.title,
     description: d.description,
     body: d.body,
+    notes: d.notes,
     audience: d.audience,
     visibility: d.visibility,
     owner_id: uid,
@@ -199,6 +203,7 @@ export async function updatePrompt(
       title: d.title,
       description: d.description,
       body: d.body,
+      notes: d.notes,
       audience: d.audience,
       visibility: d.visibility,
     })

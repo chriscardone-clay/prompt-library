@@ -234,6 +234,20 @@ export function PromptEditor({
               ))}
             </div>
           </div>
+          <label className="field">
+            <div className={styles.bodyHead}>
+              <span className="eyebrow">How to use</span>
+              <span className="tiny muted">Optional. Shown under the prompt, not copied with it.</span>
+            </div>
+            <textarea
+              className="textarea"
+              rows={5}
+              value={d.notes}
+              onChange={(e) => upd({ notes: e.target.value })}
+              placeholder={"When to use it, tips, connectors it needs. Start a line with \"- \" for a bullet."}
+              maxLength={5000}
+            />
+          </label>
         </div>
 
         <div className={styles.side}>

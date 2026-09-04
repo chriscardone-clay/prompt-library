@@ -26,6 +26,7 @@ export default async function EditPromptPage({ params }: { params: Promise<{ id:
           title: prompt.title,
           description: prompt.description,
           body: prompt.body,
+          notes: prompt.notes,
           apps: prompt.apps,
           audience: prompt.audience,
           visibility: prompt.visibility,

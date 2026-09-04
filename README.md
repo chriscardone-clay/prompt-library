@@ -18,7 +18,8 @@ There is no separate API server. Server Components read through the Supabase cli
 
 ## Features
 
-- **Discover / My prompts** with search, filter by app (and surface for Claude/ChatGPT), filter by team, sort by top / newest / recently updated. Filters live in the URL so views are shareable.
+- **Discover / My prompts** with search, filter by app (Town, Claude, ChatGPT, Claygent, Monty, Granola; plus surface for Claude/ChatGPT), filter by team, sort by top / newest / recently updated. Filters live in the URL so views are shareable.
+- **How to use** notes on any prompt: when to use it, tips, connectors it needs. Shown under the prompt, never copied with it. Lines starting with `- ` render as bullets; a short line ending in `:` renders as a label.
 - **Fill in the blanks**: `{{placeholders}}` in a prompt body become inputs; the preview updates live and one click copies the filled prompt. Fills persist per prompt in the browser.
 - **Fork**: any prompt can be forked. Forks stay linked; the detail page shows the whole variant tree and the fork note ("what did you change?").
 - **Upvotes** and **feedback** with reply + resolve for owners and editors.
@@ -169,7 +170,7 @@ The domain is read from `NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN` in the app and from `
 
 ```
 profiles          mirrors auth.users (name, email, avatar) via trigger
-prompts           title, description, body, audience, visibility, owner, parent (fork), fork_note
+prompts           title, description, body, notes (how to use), audience, visibility, owner, parent (fork), fork_note
 prompt_apps       which tools it's built for + optional surfaces (Claude: Chat/Code/Cowork, ChatGPT: Chat/Codex/Work)
 prompt_editors    invited by email; linked to a profile on first sign-in
 prompt_upvotes    one per user per prompt

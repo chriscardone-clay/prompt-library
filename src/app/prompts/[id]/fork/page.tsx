@@ -27,6 +27,7 @@ export default async function ForkPromptPage({ params }: { params: Promise<{ id:
           title: parent.title,
           description: parent.description,
           body: parent.body,
+          notes: parent.notes,
           apps: parent.apps,
           audience: parent.audience,
           visibility: "public",

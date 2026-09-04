@@ -7,6 +7,7 @@ import { Avatar } from "@/components/Avatar";
 import { FeedbackSection } from "@/components/FeedbackSection";
 import { Header } from "@/components/Header";
 import { PromptBody } from "@/components/PromptBody";
+import { PromptNotes } from "@/components/PromptNotes";
 import { AppTag, AudienceTag, PrivateTag } from "@/components/Tag";
 import { ToastFromQuery } from "@/components/Toast";
 import { VariantsTree } from "@/components/VariantsTree";
@@ -119,6 +120,7 @@ export default async function PromptPage({ params }: { params: Params }) {
         <div className={styles.columns}>
           <div className={styles.main}>
             <PromptBody promptId={prompt.id} body={prompt.body} />
+            <PromptNotes notes={prompt.notes} />
           </div>
 
           <aside className={styles.side}>

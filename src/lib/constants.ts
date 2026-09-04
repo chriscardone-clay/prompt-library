@@ -1,4 +1,4 @@
-export const APPS = ["Town", "Claude", "ChatGPT", "Claygent", "Monty"] as const;
+export const APPS = ["Town", "Claude", "ChatGPT", "Claygent", "Monty", "Granola"] as const;
 export type App = (typeof APPS)[number];
 
 export const AUDIENCES = ["EPD", "GS", "GTM", "Other"] as const;
@@ -14,6 +14,7 @@ export const APP_COLORS: Record<App, { bg: string; fg: string }> = {
   ChatGPT: { bg: "#FCFEE2", fg: "#808000" },
   Claygent: { bg: "#F0FCFF", fg: "#008BAD" },
   Monty: { bg: "#FFF0FA", fg: "#CC089E" },
+  Granola: { bg: "#FEFAE8", fg: "#9E5802" },
 };
 
 /** Apps that have distinct surfaces a prompt can be scoped to. */
