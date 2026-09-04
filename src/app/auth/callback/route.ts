@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { syncAvatarOnLogin } from "@/lib/avatars";
 import { ALLOWED_EMAIL_DOMAIN } from "@/lib/constants";
 import { getRequestOrigin } from "@/lib/site";
 import { createClient } from "@/lib/supabase/server";
@@ -32,5 +33,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/login?error=domain`);
   }
 
+  await syncAvatarOnLogin(supabase, data.user.id, email);
   return NextResponse.redirect(`${origin}${next}`);
 }

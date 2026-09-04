@@ -5,6 +5,8 @@ export interface Profile {
   email: string;
   name: string;
   avatar_url: string | null;
+  /** Last Slack photo refresh; only loaded for the signed-in user. */
+  avatar_synced_at?: string | null;
 }
 
 /** A person shown in the UI. Editors who haven't signed in yet have no id. */

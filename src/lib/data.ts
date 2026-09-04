@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
+import { avatarIsStale, syncSlackAvatar } from "./avatars";
 import { type Catalog, type CatalogApp, type CatalogTeam } from "./catalog";
 import { isVisibility } from "./constants";
 import { personFromEmail, personFromProfile, UNKNOWN_PERSON } from "./people";
@@ -87,10 +88,14 @@ export const getCurrentUser = cache(async (): Promise<Profile | null> => {
   if (!uid) return null;
   const { data } = await supabase
     .from("profiles")
-    .select("id, email, name, avatar_url")
+    .select("id, email, name, avatar_url, avatar_synced_at")
     .eq("id", uid)
     .maybeSingle();
-  if (data) return data as Profile;
+  if (data) {
+    const profile = data as Profile;
+    // Photos come from Slack; refresh weekly so changes there show up here.
+    return avatarIsStale(profile) ? syncSlackAvatar(supabase, profile) : profile;
+  }
   // Profile row is created by a DB trigger; fall back to the JWT if it lags.
   const c = claims!.claims as Record<string, unknown>;
   const meta = (c.user_metadata ?? {}) as Record<string, string | undefined>;

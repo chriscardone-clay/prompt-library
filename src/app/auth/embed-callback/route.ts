@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { syncAvatarOnLogin } from "@/lib/avatars";
 import { ALLOWED_EMAIL_DOMAIN } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/server";
 
@@ -32,5 +33,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "domain" }, { status: 403 });
   }
 
+  await syncAvatarOnLogin(supabase, data.user.id, email);
   return NextResponse.json({ ok: true });
 }
