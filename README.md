@@ -111,8 +111,8 @@ Then open the app and click "Continue with Google". Non-clay.com accounts are re
 
 Any page can be embedded: in Notion type `/embed`, paste the URL, and pick a tall block. Best results:
 
-- Whole library: `https://prompts.artificialchill.com/`
-- One prompt: `https://prompts.artificialchill.com/prompts/<id>` (copy the address from the prompt page)
+- Whole library: `https://www.clayprompts.com/`
+- One prompt: `https://www.clayprompts.com/prompts/<id>` (copy the address from the prompt page)
 
 How it works, and what to expect:
 
