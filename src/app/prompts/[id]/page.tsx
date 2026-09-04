@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
 import { Avatar } from "@/components/Avatar";
+import { DeleteButton } from "@/components/DeleteButton";
 import { FeedbackSection } from "@/components/FeedbackSection";
 import { Header } from "@/components/Header";
 import { PromptBody } from "@/components/PromptBody";
@@ -63,7 +64,7 @@ export default async function PromptPage({ params }: { params: Params }) {
       </Suspense>
 
       <section className={styles.section}>
-        <Link href={prompt.kind === "skill" ? "/?kind=skills" : "/"} className="back-link">
+        <Link href={prompt.kind === "skill" ? "/?kind=skills" : "/?kind=prompts"} className="back-link">
           <ArrowLeft weight="bold" size={13} />
           Back
         </Link>
@@ -120,6 +121,9 @@ export default async function PromptPage({ params }: { params: Params }) {
                 <PencilSimple weight="bold" size={15} />
                 Edit
               </Link>
+            ) : null}
+            {prompt.ownerId === user.id ? (
+              <DeleteButton promptId={prompt.id} title={prompt.title} returnHref="/mine" />
             ) : null}
           </div>
         </div>

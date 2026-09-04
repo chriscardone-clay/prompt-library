@@ -16,7 +16,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { createPrompt, deletePrompt, updatePrompt } from "@/app/actions";
+import { createPrompt, updatePrompt } from "@/app/actions";
 import {
   ALLOWED_EMAIL_DOMAIN,
   APP_COLORS,
@@ -123,7 +123,7 @@ export function PromptEditor({
       : !d.apps.length
         ? "Pick at least one tool."
         : !d.audiences.length
-          ? "Pick at least one team."
+          ? "Pick at least one audience."
           : isSkill
             ? "Add a title and at least one file or link."
             : "Add a title and a prompt to continue.";
@@ -345,16 +345,6 @@ export function PromptEditor({
             : "Couldn't save. Check your connection and try again.",
         );
       }
-    });
-  };
-
-  const remove = () => {
-    if (!promptId || pending) return;
-    if (!window.confirm(`Delete this ${noun}? Forks stay, but lose their link to it.`)) return;
-    start(async () => {
-      const res = await deletePrompt(promptId);
-      if (!res.ok) return setError(res.error);
-      router.push("/mine?toast=deleted");
     });
   };
 
@@ -648,28 +638,37 @@ export function PromptEditor({
                 <div className={styles.surfaceGroups}>
                   {d.apps
                     .filter((x) => SURFACES[x.app])
-                    .map((x) => (
-                      <div key={x.app} className={styles.surfaceGroup}>
-                        <span className="eyebrow">{x.app} surface</span>
-                        <div className={styles.chips}>
-                          <Chip
-                            label="Any"
-                            selected={x.surfaces.length === 0}
-                            tone={APP_COLORS[x.app]}
-                            onClick={() => setSurface(x.app, null)}
-                          />
-                          {SURFACES[x.app]!.map((s) => (
-                            <Chip
-                              key={s}
-                              label={s}
-                              selected={x.surfaces.includes(s)}
-                              tone={APP_COLORS[x.app]}
-                              onClick={() => setSurface(x.app, s)}
-                            />
-                          ))}
+                    .map((x) => {
+                      const tone = APP_COLORS[x.app];
+                      const pill = (label: string, on: boolean, onClick: () => void) => (
+                        <button
+                          key={label}
+                          type="button"
+                          className={styles.surfacePill}
+                          aria-pressed={on}
+                          onClick={onClick}
+                          style={{ ["--pill-fg" as string]: tone.fg }}
+                        >
+                          {label}
+                        </button>
+                      );
+                      return (
+                        <div key={x.app} className={styles.surfaceGroup} style={{ background: tone.bg, color: tone.fg }}>
+                          <div className={styles.surfaceHead}>
+                            <span className="eyebrow" style={{ color: tone.fg }}>
+                              {x.app}
+                            </span>
+                            <span className={styles.surfaceHint}>
+                              {x.surfaces.length ? `Works in ${x.surfaces.join(", ")}` : `Works anywhere in ${x.app}`}
+                            </span>
+                          </div>
+                          <div className={styles.surfacePills}>
+                            {pill("Anywhere", x.surfaces.length === 0, () => setSurface(x.app, null))}
+                            {SURFACES[x.app]!.map((s) => pill(s, x.surfaces.includes(s), () => setSurface(x.app, s)))}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                 </div>
               ) : null}
             </div>
@@ -776,14 +775,6 @@ export function PromptEditor({
           <span className={`tiny ${error ? styles.error : "muted"}`} role={error ? "alert" : undefined}>
             {error ?? hint}
           </span>
-          {mode === "edit" && isOwner ? (
-            <>
-              <div className="grow" />
-              <button type="button" className={styles.deleteBtn} onClick={remove} disabled={pending}>
-                Delete {noun}
-              </button>
-            </>
-          ) : null}
         </div>
       </form>
     </section>

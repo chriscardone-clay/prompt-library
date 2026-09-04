@@ -1,6 +1,6 @@
 "use client";
 
-import { LockSimple, MagnifyingGlass } from "@phosphor-icons/react";
+import { CheckSquare, FunnelSimple, LockSimple, MagnifyingGlass, Square, X } from "@phosphor-icons/react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -14,13 +14,14 @@ import {
   SORT_LABELS,
   SORTS,
   SURFACES,
+  type App,
+  type Audience,
   type Kind,
   type Sort,
 } from "@/lib/constants";
 import { ago, plural } from "@/lib/format";
 import type { Profile, Prompt } from "@/lib/types";
 import { Avatar } from "./Avatar";
-import { Chip } from "./Chip";
 import { AppTag, AudienceTag, ForkTag, SkillTag } from "./Tag";
 import { VoteButton } from "./VoteButton";
 import styles from "./PromptList.module.css";
@@ -32,6 +33,29 @@ interface Props {
   allPrompts?: Prompt[];
   me: Profile;
 }
+
+type KindFilter = Kind | "all";
+
+/** "Claude:Chat|Cowork,ChatGPT:Codex" ⇄ { Claude: ["Chat","Cowork"], ChatGPT: ["Codex"] } */
+function parseSurfaces(raw: string | null): Partial<Record<App, string[]>> {
+  const out: Partial<Record<App, string[]>> = {};
+  if (!raw) return out;
+  for (const part of raw.split(",")) {
+    const [app, list] = part.split(":");
+    if (!isApp(app)) continue;
+    const allowed = SURFACES[app] ?? [];
+    const picked = (list ?? "").split("|").filter((s) => allowed.includes(s));
+    if (picked.length) out[app] = picked;
+  }
+  return out;
+}
+function serialiseSurfaces(s: Partial<Record<App, string[]>>): string | null {
+  const parts = Object.entries(s)
+    .filter(([, v]) => v && v.length)
+    .map(([app, v]) => `${app}:${v!.join("|")}`);
+  return parts.length ? parts.join(",") : null;
+}
+const listParam = (v: string[]) => (v.length ? v.join(",") : null);
 
 export function PromptList({ view, prompts, allPrompts, me }: Props) {
   const params = useSearchParams();
@@ -45,7 +69,7 @@ export function PromptList({ view, prompts, allPrompts, me }: Props) {
     (patch: Record<string, string | null>) => {
       const next = new URLSearchParams(window.location.search);
       for (const [k, v] of Object.entries(patch)) {
-        if (v === null || v === "" || v === "All" || (k === "sort" && v === "top")) next.delete(k);
+        if (v === null || v === "" || (k === "sort" && v === "top")) next.delete(k);
         else next.set(k, v);
       }
       const qs = next.toString();
@@ -79,18 +103,49 @@ export function PromptList({ view, prompts, allPrompts, me }: Props) {
       writeUrl({ q: value });
     }, 250);
   };
+  const clearQuery = () => {
+    if (qTimer.current) clearTimeout(qTimer.current);
+    setQ("");
+    lastWrittenQ.current = "";
+    writeUrl({ q: null });
+  };
 
-  // Discover shows one kind at a time; My library shows everything you own or edit.
-  const kind: Kind = params.get("kind") === "skills" ? "skill" : "prompt";
-  const appParam = params.get("app") ?? "All";
-  const app = isApp(appParam) ? appParam : "All";
-  const surface = params.get("surface") ?? "All";
-  const audParam = params.get("team") ?? "All";
-  const aud = isAudience(audParam) ? audParam : "All";
+  // ── Filter state (all in the URL) ─────────────────────────────────
+  const kindParam = params.get("kind");
+  const kind: KindFilter = kindParam === "prompts" ? "prompt" : kindParam === "skills" ? "skill" : "all";
+  const apps = (params.get("apps") ?? "").split(",").filter(isApp);
+  const surfaces = parseSurfaces(params.get("surfaces"));
+  const teams = (params.get("teams") ?? "").split(",").filter(isAudience);
   const sortParam = params.get("sort") ?? "top";
   const sort: Sort = isSort(sortParam) ? sortParam : "top";
-  const setParams = writeUrl;
+  const filtersOpen = params.get("filters") === "1";
 
+  const setApps = (next: App[], nextSurfaces = surfaces) =>
+    writeUrl({ apps: listParam(next), surfaces: serialiseSurfaces(nextSurfaces) });
+  const toggleApp = (app: App) => {
+    const on = apps.includes(app);
+    const nextSurfaces = { ...surfaces };
+    if (on) delete nextSurfaces[app];
+    setApps(on ? apps.filter((a) => a !== app) : [...apps, app], nextSurfaces);
+  };
+  const toggleSurface = (app: App, sf: string) => {
+    const cur = surfaces[app] ?? [];
+    const next = { ...surfaces, [app]: cur.includes(sf) ? cur.filter((x) => x !== sf) : [...cur, sf] };
+    writeUrl({ surfaces: serialiseSurfaces(next) });
+  };
+  const toggleTeam = (t: Audience) =>
+    writeUrl({ teams: listParam(teams.includes(t) ? teams.filter((x) => x !== t) : [...teams, t]) });
+  const clearFilters = () => {
+    if (qTimer.current) clearTimeout(qTimer.current);
+    setQ("");
+    lastWrittenQ.current = "";
+    writeUrl({ apps: null, surfaces: null, teams: null, q: null });
+  };
+
+  const activeCount = apps.length + Object.values(surfaces).reduce((n, v) => n + (v?.length ?? 0), 0) + teams.length;
+  const hasActive = activeCount > 0 || q.trim().length > 0;
+
+  // ── Derived list ──────────────────────────────────────────────────
   const forkCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const p of allPrompts ?? prompts) {
@@ -101,17 +156,20 @@ export function PromptList({ view, prompts, allPrompts, me }: Props) {
 
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    let out = view === "discover" ? prompts.filter((p) => p.kind === kind) : prompts;
-    if (app !== "All") {
+    let out = kind === "all" ? prompts : prompts.filter((p) => p.kind === kind);
+    if (apps.length) {
       out = out.filter((p) =>
-        p.apps.some(
-          (a) =>
-            a.app === app &&
-            (surface === "All" || a.surfaces.length === 0 || a.surfaces.includes(surface)),
-        ),
+        apps.some((app) => {
+          const want = surfaces[app] ?? [];
+          return p.apps.some(
+            (a) =>
+              a.app === app &&
+              (!want.length || !a.surfaces.length || a.surfaces.some((x) => want.includes(x))),
+          );
+        }),
       );
     }
-    if (aud !== "All") out = out.filter((p) => p.audiences.includes(aud));
+    if (teams.length) out = out.filter((p) => p.audiences.some((a) => teams.includes(a)));
     if (needle) {
       out = out.filter((p) =>
         [p.title, p.description, p.body, ...p.files.map((f) => `${f.name} ${f.content}`)]
@@ -128,145 +186,260 @@ export function PromptList({ view, prompts, allPrompts, me }: Props) {
       if (sort === "new") return t(b.createdAt) - t(a.createdAt);
       return t(b.updatedAt) - t(a.updatedAt);
     });
-  }, [prompts, view, kind, q, app, surface, aud, sort]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prompts, kind, q, params.get("apps"), params.get("surfaces"), params.get("teams"), sort]);
 
-  const surfaces = app !== "All" ? SURFACES[app] : undefined;
-  const title = view === "mine" ? "My library" : kind === "skill" ? "Discover skills" : "Discover prompts";
+  const title =
+    view === "mine" ? "My library" : kind === "skill" ? "Discover skills" : kind === "prompt" ? "Discover prompts" : "Discover";
   const countLabel =
     view === "mine"
       ? `${plural(list.length, "item")} you own or edit`
-      : plural(list.length, kind === "skill" ? "skill" : "prompt");
-  const newHref = view === "discover" && kind === "skill" ? "/skills/new" : "/prompts/new";
-  const newLabel = view === "discover" && kind === "skill" ? "New skill" : "New prompt";
+      : plural(list.length, kind === "skill" ? "skill" : kind === "prompt" ? "prompt" : "item");
+  const newHref = kind === "skill" ? "/skills/new" : "/prompts/new";
+  const newLabel = kind === "skill" ? "New skill" : "New prompt";
+
+  const activeChips: { key: string; label: string; bg: string; fg: string; remove: () => void }[] = [
+    ...apps.map((app) => {
+      const want = surfaces[app] ?? [];
+      return {
+        key: `a-${app}`,
+        label: want.length ? `${app} · ${want.join(", ")}` : app,
+        bg: APP_COLORS[app].bg,
+        fg: APP_COLORS[app].fg,
+        remove: () => toggleApp(app),
+      };
+    }),
+    ...teams.map((t) => ({ key: `t-${t}`, label: t, bg: "var(--white)", fg: "var(--fg)", remove: () => toggleTeam(t) })),
+  ];
 
   return (
     <section className={styles.section}>
-      <div className={styles.titleRow}>
-        <div className={styles.titleStack}>
-          <h1 className="display-lg">{title}</h1>
-          <div className="muted small">{countLabel}</div>
-        </div>
-        <div className={styles.controls}>
-          {view === "discover" ? (
-            <div className={styles.kindGroup} role="group" aria-label="Show">
+      <div className={styles.titleStack}>
+        <h1 className="display-lg">{title}</h1>
+        <div className="muted small">{countLabel}</div>
+      </div>
+
+      {/* ── Toolbar ── */}
+      <div className={styles.toolbar}>
+        <div className={styles.toolbarRow}>
+          <button
+            type="button"
+            className={styles.filtersBtn}
+            aria-pressed={filtersOpen}
+            aria-expanded={filtersOpen}
+            data-active={filtersOpen || activeCount > 0 ? "" : undefined}
+            onClick={() => writeUrl({ filters: filtersOpen ? null : "1" })}
+          >
+            <FunnelSimple weight="bold" size={16} />
+            Filters
+            {activeCount > 0 ? <span className={styles.badge}>{activeCount}</span> : null}
+          </button>
+          <label className={styles.search}>
+            <MagnifyingGlass size={18} className="muted" />
+            <input
+              type="search"
+              value={q}
+              onChange={(e) => onQueryChange(e.target.value)}
+              placeholder="Search titles, descriptions, files…"
+              aria-label="Search"
+            />
+            {q ? (
+              <button type="button" className={styles.clearSearch} onClick={clearQuery} aria-label="Clear search">
+                <X weight="bold" size={13} />
+              </button>
+            ) : null}
+          </label>
+          <div className={styles.kindGroup} role="group" aria-label="Show">
+            {(
+              [
+                ["all", "All"],
+                ["prompt", "Prompts"],
+                ["skill", "Skills"],
+              ] as [KindFilter, string][]
+            ).map(([k, label]) => (
               <button
+                key={k}
                 type="button"
                 className={styles.kindBtn}
-                aria-pressed={kind === "prompt"}
-                onClick={() => setParams({ kind: null })}
+                aria-pressed={kind === k}
+                onClick={() => writeUrl({ kind: k === "all" ? null : k === "skill" ? "skills" : "prompts" })}
               >
-                Prompts
+                {label}
               </button>
-              <button
-                type="button"
-                className={styles.kindBtn}
-                aria-pressed={kind === "skill"}
-                onClick={() => setParams({ kind: "skills" })}
-              >
-                Skills
-              </button>
-            </div>
-          ) : null}
+            ))}
+          </div>
           <div className={styles.sortGroup} role="group" aria-label="Sort">
+            <span className={`eyebrow ${styles.sortLabel}`}>Sort</span>
             {SORTS.map((s) => (
               <button
                 key={s}
                 type="button"
                 className={styles.sortBtn}
                 aria-pressed={sort === s}
-                onClick={() => setParams({ sort: s })}
+                onClick={() => writeUrl({ sort: s })}
               >
                 {SORT_LABELS[s]}
               </button>
             ))}
           </div>
         </div>
+        {hasActive ? (
+          <div className={styles.activeRow}>
+            {activeChips.map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                className={styles.activeChip}
+                style={{ background: c.bg, color: c.fg }}
+                onClick={c.remove}
+                aria-label={`Remove filter ${c.label}`}
+              >
+                {c.label}
+                <X weight="bold" size={10} />
+              </button>
+            ))}
+            <div className="grow" />
+            <button type="button" className={styles.clearAllText} onClick={clearFilters}>
+              Clear all
+            </button>
+          </div>
+        ) : null}
       </div>
 
-      <div className={styles.filters}>
-        <label className={styles.search}>
-          <MagnifyingGlass size={18} className="muted" />
-          <input
-            type="search"
-            value={q}
-            onChange={(e) => onQueryChange(e.target.value)}
-            placeholder={
-              kind === "skill" && view === "discover"
-                ? "Search skills, descriptions, files…"
-                : "Search prompts, descriptions, placeholders…"
-            }
-            aria-label="Search"
-          />
-        </label>
-        <div className={styles.filterRows}>
-          <div className={styles.filterRow}>
-            <span className={`eyebrow ${styles.filterLabel}`}>App</span>
-            <Chip
-              label="All"
-              selected={app === "All"}
-              onClick={() => setParams({ app: null, surface: null })}
-            />
-            {APPS.map((a) => (
-              <Chip
-                key={a}
-                label={a}
-                selected={app === a}
-                tone={APP_COLORS[a]}
-                onClick={() => setParams({ app: a, surface: null })}
-              />
-            ))}
-          </div>
-          {surfaces && app !== "All" ? (
-            <div className={styles.filterRow}>
-              <span className={`eyebrow ${styles.filterLabel}`}>{app} surface</span>
-              <Chip
-                label="All"
-                selected={surface === "All"}
-                tone={APP_COLORS[app]}
-                onClick={() => setParams({ surface: null })}
-              />
-              {surfaces.map((s) => (
-                <Chip
-                  key={s}
-                  label={s}
-                  selected={surface === s}
-                  tone={APP_COLORS[app]}
-                  onClick={() => setParams({ surface: s })}
-                />
+      {/* ── Filters panel + results ── */}
+      <div className={styles.body}>
+        {filtersOpen ? (
+          <aside className={styles.panel} aria-label="Filters">
+            <div className={styles.panelHead}>
+              <span className={styles.panelTitle}>Filters</span>
+              <button
+                type="button"
+                className={styles.panelClose}
+                onClick={() => writeUrl({ filters: null })}
+                aria-label="Close filters"
+              >
+                <X weight="bold" size={15} />
+              </button>
+            </div>
+
+            <div className={styles.group}>
+              <span className="eyebrow">App</span>
+              <div className={styles.optionList}>
+                {APPS.map((app) => {
+                  const on = apps.includes(app);
+                  const tone = APP_COLORS[app];
+                  const surfList = SURFACES[app] ?? [];
+                  const want = surfaces[app] ?? [];
+                  return (
+                    <div key={app} className={styles.optionBlock}>
+                      <button
+                        type="button"
+                        className={styles.option}
+                        role="checkbox"
+                        aria-checked={on}
+                        onClick={() => toggleApp(app)}
+                      >
+                        {on ? (
+                          <CheckSquare weight="fill" size={18} style={{ color: tone.fg }} />
+                        ) : (
+                          <Square size={18} style={{ color: tone.fg }} />
+                        )}
+                        <span className="grow">{app}</span>
+                      </button>
+                      {on && surfList.length ? (
+                        <div className={styles.surfaces} style={{ borderColor: tone.bg }}>
+                          <span className={styles.surfaceHint}>
+                            {want.length ? `${want.length} of ${surfList.length}` : "Any surface"}
+                          </span>
+                          {surfList.map((sf) => {
+                            const sOn = want.includes(sf);
+                            return (
+                              <button
+                                key={sf}
+                                type="button"
+                                className={`${styles.option} ${styles.optionSm}`}
+                                role="checkbox"
+                                aria-checked={sOn}
+                                onClick={() => toggleSurface(app, sf)}
+                              >
+                                {sOn ? (
+                                  <CheckSquare weight="fill" size={16} style={{ color: tone.fg }} />
+                                ) : (
+                                  <Square size={16} style={{ color: tone.fg }} />
+                                )}
+                                {sf}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className={styles.group}>
+              <span className="eyebrow">Team</span>
+              <div className={styles.optionList}>
+                {AUDIENCES.map((t) => {
+                  const on = teams.includes(t);
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      className={styles.option}
+                      role="checkbox"
+                      aria-checked={on}
+                      onClick={() => toggleTeam(t)}
+                    >
+                      {on ? <CheckSquare weight="fill" size={18} /> : <Square size={18} />}
+                      {t}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {hasActive ? (
+              <button type="button" className="btn btn-outline btn-sm on-slab" style={{ alignSelf: "flex-start" }} onClick={clearFilters}>
+                Clear all
+              </button>
+            ) : null}
+          </aside>
+        ) : null}
+
+        <div className={styles.results}>
+          {list.length ? (
+            <div className={styles.grid}>
+              {list.map((p) => (
+                <PromptCard key={p.id} prompt={p} forks={forkCounts.get(p.id) ?? 0} meId={me.id} />
               ))}
             </div>
-          ) : null}
-          <div className={styles.filterRow}>
-            <span className={`eyebrow ${styles.filterLabel}`}>Team</span>
-            <Chip label="All" selected={aud === "All"} onClick={() => setParams({ team: null })} />
-            {AUDIENCES.map((a) => (
-              <Chip key={a} label={a} selected={aud === a} onClick={() => setParams({ team: a })} />
-            ))}
-          </div>
+          ) : (
+            <div className={styles.empty}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/icons/Templates.png" alt="" className={styles.emptyIcon} />
+              <div className={styles.emptyTitle}>Nothing matches yet</div>
+              <div className={styles.emptyText}>
+                {kind === "skill"
+                  ? "Clear a filter, or share the skill your team keeps rebuilding."
+                  : "Clear a filter, or write the prompt your team keeps asking for."}
+              </div>
+              <div className="row gap-2 wrap" style={{ justifyContent: "center" }}>
+                {hasActive ? (
+                  <button type="button" className="btn btn-outline on-slab" onClick={clearFilters}>
+                    Clear filters
+                  </button>
+                ) : null}
+                <Link href={newHref} className="btn btn-primary">
+                  {newLabel}
+                </Link>
+              </div>
+            </div>
+          )}
         </div>
       </div>
-
-      {list.length ? (
-        <div className={styles.grid}>
-          {list.map((p) => (
-            <PromptCard key={p.id} prompt={p} forks={forkCounts.get(p.id) ?? 0} meId={me.id} />
-          ))}
-        </div>
-      ) : (
-        <div className={styles.empty}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icons/Templates.png" alt="" className={styles.emptyIcon} />
-          <div className={styles.emptyTitle}>Nothing matches yet</div>
-          <div className={styles.emptyText}>
-            {kind === "skill" && view === "discover"
-              ? "Clear a filter, or share the skill your team keeps rebuilding."
-              : "Clear a filter, or write the prompt your team keeps asking for."}
-          </div>
-          <Link href={newHref} className="btn btn-primary">
-            {newLabel}
-          </Link>
-        </div>
-      )}
     </section>
   );
 }

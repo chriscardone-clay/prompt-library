@@ -1,0 +1,78 @@
+.wrap {
+  display: inline-flex;
+}
+
+.trash {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  background: transparent;
+  color: var(--fg-muted);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  transition: background 120ms var(--ease), color 120ms var(--ease), border-color 120ms var(--ease);
+}
+.trash:hover {
+  background: #fdecec;
+  color: #b42318;
+  border-color: #fdecec;
+}
+
+.confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fdecec;
+  border-radius: var(--radius-pill);
+  padding: 4px 4px 4px 14px;
+  animation: confirmIn 160ms var(--ease);
+}
+@keyframes confirmIn {
+  from {
+    opacity: 0;
+    transform: translateX(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.question {
+  font-size: 13px;
+  font-weight: 500;
+  color: #7a1f1f;
+  white-space: nowrap;
+}
+
+.delete {
+  background: #b42318;
+  color: var(--oat-100);
+  border: 0;
+  border-radius: var(--radius-pill);
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.delete:hover:not(:disabled) {
+  opacity: 0.9;
+}
+.delete:disabled {
+  opacity: 0.6;
+}
+
+.keep {
+  background: transparent;
+  color: #7a1f1f;
+  border: 0;
+  border-radius: var(--radius-pill);
+  padding: 7px 10px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.keep:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.6);
+}

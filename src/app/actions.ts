@@ -372,7 +372,8 @@ export async function deletePrompt(id: string): Promise<ActionResult> {
   const { supabase } = await requireUser();
   // Collect stored binaries first (the row must still exist for the read policy).
   const paths = UUID_RE.test(id) ? await listStorageFolder(supabase, id) : [];
-  const { error } = await supabase.from("prompts").delete().eq("id", id);
+  // delete_prompt re-parents forks to the deleted item's parent, then deletes.
+  const { error } = await supabase.rpc("delete_prompt", { p_id: id });
   if (error) return { ok: false, error: error.message };
   if (paths.length) {
     // Best effort: an orphaned object is harmless, a failed delete shouldn't be.
