@@ -48,7 +48,9 @@ export function PromptList({ view, prompts, allPrompts, me }: Props) {
         else next.set(k, v);
       }
       const qs = next.toString();
-      window.history.replaceState(window.history.state, "", qs ? `${pathname}?${qs}` : pathname);
+      // Pass null state: Next only syncs useSearchParams for replaceState calls
+      // that don't carry its own internal history state.
+      window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname);
     },
     [pathname],
   );
