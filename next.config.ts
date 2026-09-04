@@ -26,10 +26,10 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     serverActions: {
-      // Skill bundles are capped at 400 KB of text server-side; give the
-      // action some headroom so oversize drafts get a friendly error rather
-      // than a transport failure.
-      bodySizeLimit: "2mb",
+      // Inline skill text is capped at 1.5 MB server-side (binaries go to
+      // Storage directly from the browser); give the action headroom so an
+      // oversize draft gets a friendly error rather than a transport failure.
+      bodySizeLimit: "4mb",
     },
   },
   async headers() {

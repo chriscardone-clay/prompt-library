@@ -52,9 +52,39 @@ export function isArchiveName(name: string): boolean {
 export function asFiles(v: unknown): SkillFile[] {
   if (!Array.isArray(v)) return [];
   return v
-    .filter((x): x is { name?: unknown; content?: unknown } => !!x && typeof x === "object")
-    .map((x) => ({ name: String(x.name ?? ""), content: String(x.content ?? "") }))
+    .filter(
+      (x): x is { name?: unknown; content?: unknown; path?: unknown; size?: unknown; type?: unknown } =>
+        !!x && typeof x === "object",
+    )
+    .map((x) => {
+      const f: SkillFile = { name: String(x.name ?? ""), content: String(x.content ?? "") };
+      if (typeof x.path === "string" && x.path) {
+        f.path = x.path;
+        f.size = typeof x.size === "number" ? x.size : 0;
+        if (typeof x.type === "string" && x.type) f.type = x.type;
+        f.content = "";
+      }
+      return f;
+    })
     .filter((f) => f.name.trim());
+}
+
+/** Bytes a file contributes to the bundle size. */
+export function fileBytes(f: SkillFile): number {
+  if (f.path) return f.size ?? 0;
+  // UTF-8 length without allocating an encoder for every keystroke.
+  let n = 0;
+  for (let i = 0; i < f.content.length; i++) {
+    const c = f.content.charCodeAt(i);
+    n += c < 0x80 ? 1 : c < 0x800 ? 2 : c >= 0xd800 && c <= 0xdbff ? (i++, 4) : 3;
+  }
+  return n;
+}
+
+export function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024).toLocaleString()} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function asLinks(v: unknown): SkillLink[] {

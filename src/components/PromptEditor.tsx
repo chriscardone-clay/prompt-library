@@ -2,6 +2,7 @@
 
 import {
   ArrowLeft,
+  Cube,
   FileText,
   GitFork,
   GlobeHemisphereWest,
@@ -21,6 +22,8 @@ import {
   APP_COLORS,
   APPS,
   AUDIENCES,
+  MAX_SKILL_BYTES,
+  MAX_SKILL_TEXT_BYTES,
   SKILL_TEMPLATE,
   SURFACES,
   type App,
@@ -29,13 +32,17 @@ import {
 } from "@/lib/constants";
 import { personFromEmail } from "@/lib/people";
 import { parsePlaceholders } from "@/lib/placeholders";
-import { isArchiveName, isSkillMd, parseFrontmatter, titleFromSlug } from "@/lib/skills";
-import type { Person, PromptApp, PromptDraft, SkillFile } from "@/lib/types";
+import {
+  fileBytes,
+  formatBytes,
+  isArchiveName,
+  isSkillMd,
+  parseFrontmatter,
+  titleFromSlug,
+} from "@/lib/skills";
+import { uploadSkillBinary } from "@/lib/supabase/storage";
+import { isBinaryFile, type Person, type PromptApp, type PromptDraft, type SkillFile } from "@/lib/types";
 import { isBinaryName, looksBinary, unzip } from "@/lib/zip";
-
-/** Mirrors the server-side cap on a skill's text (see actions.ts). */
-const MAX_FILES_TOTAL = 400_000;
-const fmtKb = (n: number) => `${Math.round(n / 1024).toLocaleString()} KB`;
 import { Avatar } from "./Avatar";
 import { Chip } from "./Chip";
 import { useToast } from "./Toast";
@@ -62,8 +69,6 @@ const VIS_OPTIONS: { k: Visibility; label: string; sub: string; Icon: typeof Loc
   { k: "private", label: "Private", sub: "Only you and your editors", Icon: LockSimple },
 ];
 
-const UPLOAD_ACCEPT = ".skill,.zip,.md,.txt,.json,.yaml,.yml,.js,.py,.csv";
-
 export function PromptEditor({
   mode,
   initial,
@@ -78,7 +83,11 @@ export function PromptEditor({
   const [fileIdx, setFileIdx] = useState(0);
   const [invite, setInvite] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  // The row's id is fixed up front so binary uploads can land in its storage
+  // folder before the row exists. Editing reuses the real id.
+  const [draftId] = useState(() => (mode === "edit" && promptId ? promptId : crypto.randomUUID()));
   const router = useRouter();
   const { show } = useToast();
 
@@ -88,18 +97,24 @@ export function PromptEditor({
   const keys = useMemo(() => parsePlaceholders(d.body), [d.body]);
   const isOwner = owner.id === me.id;
   const hasUrl = d.links.some((l) => l.url.trim());
-  const filesTotal = d.files.reduce((n, f) => n + f.content.length, 0);
-  const overLimit = isSkill && filesTotal > MAX_FILES_TOTAL;
+  const textBytes = d.files.reduce((n, f) => n + (isBinaryFile(f) ? 0 : fileBytes(f)), 0);
+  const totalBytes = d.files.reduce((n, f) => n + fileBytes(f), 0);
+  const overLimit = isSkill && (totalBytes > MAX_SKILL_BYTES || textBytes > MAX_SKILL_TEXT_BYTES);
   const valid =
     d.title.trim().length > 0 &&
     (isSkill ? d.files.length > 0 || hasUrl : d.body.trim().length > 0) &&
     d.apps.length > 0 &&
     d.audiences.length > 0 &&
-    !overLimit;
+    !overLimit &&
+    !uploading;
   const hint = valid
     ? ""
-    : overLimit
-      ? `Files are ${fmtKb(filesTotal)} in total; the limit is ${fmtKb(MAX_FILES_TOTAL)}. Remove or trim some files.`
+    : uploading
+      ? uploading
+      : overLimit
+        ? totalBytes > MAX_SKILL_BYTES
+          ? `The skill totals ${formatBytes(totalBytes)}; the limit is ${formatBytes(MAX_SKILL_BYTES)}. Remove some files.`
+          : `Text files total ${formatBytes(textBytes)}; the limit is ${formatBytes(MAX_SKILL_TEXT_BYTES)}. Trim or remove some.`
       : !d.apps.length
         ? "Pick at least one tool."
         : !d.audiences.length
@@ -156,31 +171,41 @@ export function PromptEditor({
     if (!list.length) return;
     const archives = list.filter((f) => isArchiveName(f.name)).length;
     try {
-      const skipped: string[] = [];
-      const groups = await Promise.all(
-        list.map(async (f): Promise<SkillFile[]> => {
-          if (isArchiveName(f.name)) {
-            const r = await unzip(await f.arrayBuffer());
-            skipped.push(...r.skipped);
-            return r.files;
-          }
+      // Read everything first: text stays inline, binaries go to storage.
+      const texts: SkillFile[] = [];
+      const binaries: { name: string; bytes: Uint8Array; type?: string }[] = [];
+      for (const f of list) {
+        if (isArchiveName(f.name)) {
+          const r = await unzip(await f.arrayBuffer());
+          texts.push(...r.texts.map((t) => ({ name: t.name, content: t.content })));
+          binaries.push(...r.binaries);
+        } else {
           const bytes = new Uint8Array(await f.arrayBuffer());
-          if (isBinaryName(f.name) || looksBinary(bytes)) {
-            skipped.push(f.name);
-            return [];
-          }
-          return [{ name: f.name, content: new TextDecoder().decode(bytes) }];
-        }),
-      );
-      const added = groups.flat();
-      if (!added.length) {
-        show(
-          skipped.length
-            ? "Nothing to add: those files aren't text (fonts, images…). Skills here hold text files only."
-            : "No files found in that archive",
-        );
+          if (isBinaryName(f.name) || looksBinary(bytes)) binaries.push({ name: f.name, bytes, type: f.type || undefined });
+          else texts.push({ name: f.name, content: new TextDecoder().decode(bytes) });
+        }
+      }
+      if (!texts.length && !binaries.length) {
+        show("No files found in that archive");
         return;
       }
+      const incoming = binaries.reduce((n, b) => n + b.bytes.length, 0) + texts.reduce((n, t) => n + fileBytes(t), 0);
+      if (totalBytes + incoming > MAX_SKILL_BYTES) {
+        show(`That would make the skill ${formatBytes(totalBytes + incoming)}; the limit is ${formatBytes(MAX_SKILL_BYTES)}.`);
+        return;
+      }
+
+      const stored: SkillFile[] = [];
+      for (let i = 0; i < binaries.length; i++) {
+        const b = binaries[i];
+        setUploading(`Uploading ${b.name.split("/").pop()} (${i + 1} of ${binaries.length})…`);
+        const path = await uploadSkillBinary(draftId, b.name, b.bytes, b.type);
+        const entry: SkillFile = { name: b.name, content: "", path, size: b.bytes.length };
+        if (b.type) entry.type = b.type;
+        stored.push(entry);
+      }
+      setUploading(null);
+      const added: SkillFile[] = [...texts, ...stored];
       setD((cur) => {
         // An untouched template gets replaced by an uploaded bundle, not merged into it.
         const isTemplate =
@@ -201,16 +226,11 @@ export function PromptEditor({
         setFileIdx(idx);
         return { ...cur, ...patch, files: merged };
       });
-      const addedMsg = archives
-        ? `Unpacked ${added.length} file${added.length === 1 ? "" : "s"} from .skill`
-        : `Added ${added.length} file${added.length === 1 ? "" : "s"}`;
-      show(
-        skipped.length
-          ? `${addedMsg}. Skipped ${skipped.length} binary file${skipped.length === 1 ? "" : "s"} (fonts, images): skills here hold text only.`
-          : addedMsg,
-      );
-    } catch {
-      show("Could not read that file");
+      const n = added.length;
+      show(archives ? `Unpacked ${n} file${n === 1 ? "" : "s"} from .skill` : `Added ${n} file${n === 1 ? "" : "s"}`);
+    } catch (err) {
+      setUploading(null);
+      show(err instanceof Error && err.message ? `Upload failed: ${err.message}` : "Could not read that file");
     }
   };
 
@@ -247,7 +267,7 @@ export function PromptEditor({
         const res =
           mode === "edit" && promptId
             ? await updatePrompt(promptId, d)
-            : await createPrompt(d, mode === "fork" ? promptId ?? null : null);
+            : await createPrompt(d, mode === "fork" ? promptId ?? null : null, draftId);
         if (!res.ok) {
           setError(res.error);
           return;
@@ -352,7 +372,7 @@ export function PromptEditor({
                   <span className="eyebrow">Files</span>
                   <span className={`tiny ${overLimit ? styles.error : "muted"}`}>
                     {d.files.length} file{d.files.length === 1 ? "" : "s"}
-                    {d.files.length ? ` · ${fmtKb(filesTotal)} of ${fmtKb(MAX_FILES_TOTAL)}` : ""}
+                    {d.files.length ? ` · ${formatBytes(totalBytes)} of ${formatBytes(MAX_SKILL_BYTES)}` : ""}
                   </span>
                 </div>
                 <div className={skillStyles.editorFiles}>
@@ -364,8 +384,9 @@ export function PromptEditor({
                         className={skillStyles.fileTab}
                         aria-pressed={i === curIdx}
                         onClick={() => setFileIdx(i)}
+                        title={isBinaryFile(f) ? `${f.name} · ${formatBytes(f.size ?? 0)}` : undefined}
                       >
-                        <FileText size={14} />
+                        {isBinaryFile(f) ? <Cube size={14} /> : <FileText size={14} />}
                         {f.name || "untitled"}
                       </button>
                     ))}
@@ -380,8 +401,8 @@ export function PromptEditor({
                       <input
                         type="file"
                         multiple
-                        accept={UPLOAD_ACCEPT}
                         onChange={onUpload}
+                        disabled={!!uploading}
                         style={{ display: "none" }}
                       />
                     </label>
@@ -403,14 +424,28 @@ export function PromptEditor({
                           Remove
                         </button>
                       </div>
-                      <textarea
-                        className={skillStyles.fileEditor}
-                        rows={18}
-                        spellCheck={false}
-                        value={curFile.content}
-                        onChange={(e) => setFile({ content: e.target.value })}
-                        aria-label={`Contents of ${curFile.name}`}
-                      />
+                      {isBinaryFile(curFile) ? (
+                        <div className={skillStyles.binaryView}>
+                          <Cube size={28} className="muted" />
+                          <div className="stack" style={{ gap: 4 }}>
+                            <div style={{ fontWeight: 500 }}>{curFile.name.split("/").pop()}</div>
+                            <div className="small muted">
+                              Binary file · {formatBytes(curFile.size ?? 0)}
+                              {curFile.type ? ` · ${curFile.type}` : ""}. Stored as-is and included in the
+                              .skill download.
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <textarea
+                          className={skillStyles.fileEditor}
+                          rows={18}
+                          spellCheck={false}
+                          value={curFile.content}
+                          onChange={(e) => setFile({ content: e.target.value })}
+                          aria-label={`Contents of ${curFile.name}`}
+                        />
+                      )}
                     </>
                   ) : (
                     <div className={skillStyles.noFiles}>
@@ -421,8 +456,8 @@ export function PromptEditor({
                 </div>
                 <span className="tiny muted">
                   Upload a .skill file and it unpacks into its files here, filling in the title and
-                  description from SKILL.md. Or start from the template: name and description in the
-                  frontmatter, then the steps.
+                  description from SKILL.md. Text files are editable; fonts, images and other binaries
+                  are stored as-is. Up to {formatBytes(MAX_SKILL_BYTES)} per skill.
                 </span>
               </div>
 

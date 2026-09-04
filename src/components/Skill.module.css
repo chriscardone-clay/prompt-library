@@ -92,6 +92,13 @@
   color: var(--fg);
 }
 
+.binaryView {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 28px 22px;
+}
+
 /* ── Install ────────────────────────────────────────────────────── */
 .installList {
   display: flex;

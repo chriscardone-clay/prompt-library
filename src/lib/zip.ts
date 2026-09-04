@@ -1,9 +1,8 @@
 /**
  * Minimal zip reader/writer for skill bundles, browser-only (uses
  * TextEncoder/Decoder and DecompressionStream). Written archives use the
- * "store" method (no compression): skills are a handful of small text files.
+ * "store" method (no compression): skills are a handful of files.
  */
-import type { SkillFile } from "./types";
 
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
@@ -24,8 +23,13 @@ function crc32(bytes: Uint8Array): number {
 const u16 = (n: number) => [n & 255, (n >>> 8) & 255];
 const u32 = (n: number) => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
 
-/** Build a zip Blob from named text entries (names may include folders). */
-export function zipBlob(entries: { name: string; content: string }[]): Blob {
+export interface ZipEntry {
+  name: string;
+  content: string | Uint8Array;
+}
+
+/** Build a zip Blob from named entries (text or bytes; names may include folders). */
+export function zipBlob(entries: ZipEntry[]): Blob {
   const enc = new TextEncoder();
   const parts: Uint8Array[] = [];
   const central: Uint8Array[] = [];
@@ -36,7 +40,7 @@ export function zipBlob(entries: { name: string; content: string }[]): Blob {
 
   for (const { name, content } of entries) {
     const nameB = enc.encode(name);
-    const data = enc.encode(content);
+    const data = typeof content === "string" ? enc.encode(content) : content;
     const crc = crc32(data);
     const local = new Uint8Array([
       ...u32(0x04034b50), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(dosTime), ...u16(dosDate),
@@ -83,15 +87,22 @@ export function looksBinary(bytes: Uint8Array): boolean {
   return false;
 }
 
+export interface UnzippedText {
+  name: string;
+  content: string;
+}
+export interface UnzippedBinary {
+  name: string;
+  bytes: Uint8Array;
+}
 export interface UnzipResult {
-  files: SkillFile[];
-  /** Entries left out because they aren't text (fonts, images, archives…). */
-  skipped: string[];
+  texts: UnzippedText[];
+  binaries: UnzippedBinary[];
 }
 
 /**
- * Read text files out of a zip. Skips folders, __MACOSX, .DS_Store and
- * binary files (reported in `skipped`). If every entry sits inside one
+ * Read a zip into text entries (decoded) and binary entries (raw bytes).
+ * Skips folders, __MACOSX and .DS_Store. If every entry sits inside one
  * top-level folder, that folder is stripped.
  */
 export async function unzip(buf: ArrayBuffer): Promise<UnzipResult> {
@@ -108,8 +119,8 @@ export async function unzip(buf: ArrayBuffer): Promise<UnzipResult> {
   if (eocd < 0) throw new Error("Not a zip file");
   const count = dv.getUint16(eocd + 10, true);
   let off = dv.getUint32(eocd + 16, true);
-  const out: SkillFile[] = [];
-  const skipped: string[] = [];
+  const texts: UnzippedText[] = [];
+  const binaries: UnzippedBinary[] = [];
   for (let n = 0; n < count; n++) {
     if (dv.getUint32(off, true) !== 0x02014b50) break;
     const method = dv.getUint16(off + 10, true);
@@ -121,33 +132,24 @@ export async function unzip(buf: ArrayBuffer): Promise<UnzipResult> {
     const name = dec.decode(b.subarray(off + 46, off + 46 + nlen));
     off += 46 + nlen + elen + clen;
     if (name.endsWith("/") || name.startsWith("__MACOSX") || /(^|\/)\.DS_Store$/.test(name)) continue;
-    if (isBinaryName(name)) {
-      skipped.push(name);
-      continue;
-    }
     const lnlen = dv.getUint16(lho + 26, true);
     const lelen = dv.getUint16(lho + 28, true);
     const start = lho + 30 + lnlen + lelen;
     let data: Uint8Array = b.subarray(start, start + csize);
     if (method === 8) data = await inflateRaw(data);
-    else if (method !== 0) {
-      skipped.push(name);
-      continue;
-    }
-    if (looksBinary(data)) {
-      skipped.push(name);
-      continue;
-    }
-    out.push({ name, content: dec.decode(data) });
+    else if (method === 0) data = new Uint8Array(data); // copy out of the archive buffer
+    else continue; // unsupported compression
+    if (isBinaryName(name) || looksBinary(data)) binaries.push({ name, bytes: data });
+    else texts.push({ name, content: dec.decode(data) });
   }
   // Strip a single shared top-level folder (e.g. "clay-charts/SKILL.md" → "SKILL.md").
-  const all = [...out.map((f) => f.name), ...skipped];
+  const all = [...texts.map((f) => f.name), ...binaries.map((f) => f.name)];
   const roots = new Set(all.map((n) => n.split("/")[0]));
   const strip = roots.size === 1 && all.every((n) => n.includes("/"));
   const stripName = (n: string) => (strip ? n.slice(n.indexOf("/") + 1) : n);
   return {
-    files: out.map((f) => ({ name: stripName(f.name), content: f.content })),
-    skipped: skipped.map(stripName),
+    texts: texts.map((f) => ({ name: stripName(f.name), content: f.content })),
+    binaries: binaries.map((f) => ({ name: stripName(f.name), bytes: f.bytes })),
   };
 }
 

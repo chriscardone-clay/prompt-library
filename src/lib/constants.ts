@@ -30,6 +30,14 @@ export const KIND_LABELS: Record<Kind, { one: string; many: string }> = {
   skill: { one: "skill", many: "skills" },
 };
 
+/** A skill bundle (text inline + binaries in storage) may total this many bytes. */
+export const MAX_SKILL_BYTES = 5 * 1024 * 1024;
+/** Inline text files travel in the save request, so they get a lower cap. */
+export const MAX_SKILL_TEXT_BYTES = 1_500_000;
+export const MAX_SKILL_FILES = 60;
+/** Supabase Storage bucket for binary skill files. */
+export const SKILL_BUCKET = "skill-files";
+
 /** Starting SKILL.md for a new skill. */
 export const SKILL_TEMPLATE =
   "---\nname: my-skill\ndescription: One sentence on what this skill does and when to use it.\n---\n\n# My skill\n\n## When to use\n\n## Steps\n\n1. \n2. \n\n## Output format\n";

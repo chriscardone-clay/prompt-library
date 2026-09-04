@@ -7,11 +7,15 @@ import {
   isApp,
   isAudience,
   isVisibility,
+  MAX_SKILL_BYTES,
+  MAX_SKILL_FILES,
+  MAX_SKILL_TEXT_BYTES,
+  SKILL_BUCKET,
   SURFACES,
 } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/server";
 import { getRequestOrigin } from "@/lib/site";
-import { linkHost, skillMd } from "@/lib/skills";
+import { fileBytes, formatBytes, linkHost, skillMd } from "@/lib/skills";
 import type { PromptApp, PromptDraft, SkillFile, SkillLink } from "@/lib/types";
 
 export type ActionResult<T = undefined> =
@@ -80,12 +84,16 @@ async function requireUser() {
   return { supabase, uid, email };
 }
 
-const MAX_FILES = 40;
-const MAX_FILE_NAME = 120;
-const MAX_FILES_TOTAL = 400_000;
+const MAX_FILE_NAME = 160;
 const MAX_LINKS = 20;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function normaliseDraft(input: PromptDraft): ActionResult<PromptDraft> {
+/**
+ * Validate and tidy a draft. `allowedFolders` are the storage folders (prompt
+ * ids) a binary file may point into: the prompt itself, and for forks the
+ * parent it was copied from.
+ */
+function normaliseDraft(input: PromptDraft, allowedFolders: string[]): ActionResult<PromptDraft> {
   const kind = input.kind === "skill" ? "skill" : "prompt";
   const title = (input.title ?? "").trim();
   const description = (input.description ?? "").trim();
@@ -98,24 +106,52 @@ function normaliseDraft(input: PromptDraft): ActionResult<PromptDraft> {
   let links: SkillLink[] = [];
   if (kind === "skill") {
     const seenNames = new Set<string>();
-    let total = 0;
+    let textBytes = 0;
+    let totalBytes = 0;
     for (const f of input.files ?? []) {
       const name = String(f?.name ?? "")
         .trim()
         .replace(/^[/\\]+/, "")
         .replace(/\\/g, "/");
       if (!name) continue;
-      if (name.includes("..")) return { ok: false, error: `File name "${name}" isn't allowed.` };
+      if (name.split("/").some((seg) => seg === "..")) {
+        return { ok: false, error: `File name "${name}" isn't allowed.` };
+      }
       if (name.length > MAX_FILE_NAME) return { ok: false, error: "A file name is too long." };
       const key = name.toLowerCase();
       if (seenNames.has(key)) return { ok: false, error: `Two files are both named ${name}.` };
       seenNames.add(key);
-      const content = String(f?.content ?? "").replace(/\r\n/g, "\n");
-      total += content.length;
-      files.push({ name, content });
+
+      const path = typeof f?.path === "string" ? f.path.trim() : "";
+      if (path) {
+        // Binary file already uploaded to storage. It must sit in a folder this prompt may use.
+        const folder = path.split("/")[0];
+        if (!allowedFolders.includes(folder) || path.split("/").some((seg) => seg === "..")) {
+          return { ok: false, error: `Stored file "${name}" doesn't belong to this skill.` };
+        }
+        const size = typeof f.size === "number" && Number.isFinite(f.size) && f.size >= 0 ? Math.floor(f.size) : 0;
+        if (size > MAX_SKILL_BYTES) return { ok: false, error: `"${name}" is larger than ${formatBytes(MAX_SKILL_BYTES)}.` };
+        const type = typeof f.type === "string" ? f.type.slice(0, 100) : undefined;
+        const entry: SkillFile = { name, content: "", path, size };
+        if (type) entry.type = type;
+        totalBytes += size;
+        files.push(entry);
+      } else {
+        const content = String(f?.content ?? "").replace(/\r\n/g, "\n");
+        const entry: SkillFile = { name, content };
+        const bytes = fileBytes(entry);
+        textBytes += bytes;
+        totalBytes += bytes;
+        files.push(entry);
+      }
     }
-    if (files.length > MAX_FILES) return { ok: false, error: `A skill can hold up to ${MAX_FILES} files.` };
-    if (total > MAX_FILES_TOTAL) return { ok: false, error: "The skill's files are too large (400 KB max in total)." };
+    if (files.length > MAX_SKILL_FILES) return { ok: false, error: `A skill can hold up to ${MAX_SKILL_FILES} files.` };
+    if (textBytes > MAX_SKILL_TEXT_BYTES) {
+      return { ok: false, error: `Text files total ${formatBytes(textBytes)}; the limit is ${formatBytes(MAX_SKILL_TEXT_BYTES)}.` };
+    }
+    if (totalBytes > MAX_SKILL_BYTES) {
+      return { ok: false, error: `The skill totals ${formatBytes(totalBytes)}; the limit is ${formatBytes(MAX_SKILL_BYTES)}.` };
+    }
 
     for (const l of input.links ?? []) {
       const url = String(l?.url ?? "").trim();
@@ -198,17 +234,34 @@ function revalidatePrompt(id?: string) {
 export async function createPrompt(
   input: PromptDraft,
   parentId: string | null,
+  /** Id the editor generated up front so binary uploads could target its folder. */
+  clientId?: string,
 ): Promise<ActionResult<{ id: string }>> {
   const { supabase, uid, email } = await requireUser();
-  const v = normaliseDraft(input);
+
+  // The id is chosen before insert (by the editor, so uploads can use it) and
+  // the insert has no RETURNING clause: a RETURNING clause is checked against
+  // the SELECT policy, whose owner/editor lookup runs on the statement's
+  // snapshot and can't yet see the row, so private prompts would be rejected.
+  const id = clientId && UUID_RE.test(clientId) ? clientId.toLowerCase() : crypto.randomUUID();
+  const { data: clash } = await supabase.from("prompts").select("id").eq("id", id).maybeSingle();
+  if (clash) return { ok: false, error: "That draft was already published. Refresh and try again." };
+
+  const v = normaliseDraft(input, parentId ? [id, parentId] : [id]);
   if (!v.ok) return v;
   const d = v.data;
 
-  // Generate the id here and insert without RETURNING. A RETURNING clause is
-  // checked against the SELECT policy, whose owner/editor lookup runs on the
-  // statement's snapshot and can't yet see the row being inserted, so private
-  // prompts would be rejected with "new row violates row-level security".
-  const id = crypto.randomUUID();
+  // A fork copies the parent's binary files into its own folder so it keeps
+  // working even if the parent later becomes private or is deleted.
+  if (parentId) {
+    for (const f of d.files) {
+      if (!f.path || !f.path.startsWith(`${parentId}/`)) continue;
+      const to = `${id}/${f.path.slice(parentId.length + 1)}`;
+      const { error } = await supabase.storage.from(SKILL_BUCKET).copy(f.path, to);
+      if (error) return { ok: false, error: `Couldn't copy ${f.name}: ${error.message}` };
+      f.path = to;
+    }
+  }
   const { error } = await supabase.from("prompts").insert({
     id,
     kind: d.kind,
@@ -248,16 +301,18 @@ export async function updatePrompt(
   input: PromptDraft,
 ): Promise<ActionResult<{ id: string }>> {
   const { supabase, uid } = await requireUser();
-  const v = normaliseDraft(input);
-  if (!v.ok) return v;
-  const d = v.data;
 
   const { data: existing, error: loadErr } = await supabase
     .from("prompts")
-    .select("id, kind, owner_id, owner:profiles!prompts_owner_id_fkey ( email ), prompt_editors ( email )")
+    .select("id, kind, owner_id, parent_id, owner:profiles!prompts_owner_id_fkey ( email ), prompt_editors ( email )")
     .eq("id", id)
     .maybeSingle();
   if (loadErr || !existing) return { ok: false, error: "Prompt not found." };
+
+  const parentFolder = typeof existing.parent_id === "string" ? [existing.parent_id] : [];
+  const v = normaliseDraft(input, [id, ...parentFolder]);
+  if (!v.ok) return v;
+  const d = v.data;
   if ((existing.kind ?? "prompt") !== d.kind) {
     return { ok: false, error: "A prompt can't be turned into a skill, or the other way round." };
   }
@@ -315,10 +370,35 @@ export async function updatePrompt(
 
 export async function deletePrompt(id: string): Promise<ActionResult> {
   const { supabase } = await requireUser();
+  // Collect stored binaries first (the row must still exist for the read policy).
+  const paths = UUID_RE.test(id) ? await listStorageFolder(supabase, id) : [];
   const { error } = await supabase.from("prompts").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
+  if (paths.length) {
+    // Best effort: an orphaned object is harmless, a failed delete shouldn't be.
+    await supabase.storage.from(SKILL_BUCKET).remove(paths).catch(() => undefined);
+  }
   revalidatePrompt(id);
   return { ok: true, data: undefined };
+}
+
+/** Every object path under a storage folder, recursively. */
+async function listStorageFolder(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  prefix: string,
+): Promise<string[]> {
+  const out: string[] = [];
+  const walk = async (dir: string, depth: number) => {
+    if (depth > 8) return;
+    const { data } = await supabase.storage.from(SKILL_BUCKET).list(dir, { limit: 1000 });
+    for (const item of data ?? []) {
+      const full = `${dir}/${item.name}`;
+      if (item.id) out.push(full);
+      else await walk(full, depth + 1); // folders come back without an id
+    }
+  };
+  await walk(prefix, 0);
+  return out;
 }
 
 export async function toggleUpvote(promptId: string, on: boolean): Promise<ActionResult> {

@@ -25,10 +25,22 @@ export interface PromptEditor {
   profile: Profile | null;
 }
 
-/** A text file inside a skill bundle (SKILL.md, references, templates). */
+/**
+ * A file inside a skill bundle. Text files (SKILL.md, references, scripts)
+ * carry their content inline and are editable. Binary files (fonts, images)
+ * live in the `skill-files` storage bucket: `path` points at the object,
+ * `size` is its byte length, and `content` is empty.
+ */
 export interface SkillFile {
   name: string;
   content: string;
+  path?: string;
+  size?: number;
+  type?: string;
+}
+
+export function isBinaryFile(f: SkillFile): boolean {
+  return typeof f.path === "string" && f.path.length > 0;
 }
 
 /** Where a skill lives in its home app (a Claude project, a custom GPT, a Town agent). */
