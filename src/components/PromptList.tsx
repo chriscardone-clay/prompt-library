@@ -2,8 +2,8 @@
 
 import { LockSimple, MagnifyingGlass } from "@phosphor-icons/react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useMemo } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   APP_COLORS,
   APPS,
@@ -34,10 +34,49 @@ interface Props {
 
 export function PromptList({ view, prompts, allPrompts, me }: Props) {
   const params = useSearchParams();
-  const router = useRouter();
   const pathname = usePathname();
 
-  const q = params.get("q") ?? "";
+  // Filters live in the URL so views are shareable, but we update the URL with
+  // history.replaceState (no server round-trip) instead of the router: routing
+  // on every keystroke re-ran the page and re-rendered the input from the URL,
+  // which raced fast typing and dropped characters.
+  const writeUrl = useCallback(
+    (patch: Record<string, string | null>) => {
+      const next = new URLSearchParams(window.location.search);
+      for (const [k, v] of Object.entries(patch)) {
+        if (v === null || v === "" || v === "All" || (k === "sort" && v === "top")) next.delete(k);
+        else next.set(k, v);
+      }
+      const qs = next.toString();
+      window.history.replaceState(window.history.state, "", qs ? `${pathname}?${qs}` : pathname);
+    },
+    [pathname],
+  );
+
+  // The search box is local state for instant feedback; the URL follows it, debounced.
+  const urlQ = params.get("q") ?? "";
+  const [q, setQ] = useState(urlQ);
+  const lastWrittenQ = useRef(urlQ);
+  const qTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    // Only adopt URL changes that didn't originate here (back/forward, external link).
+    if (urlQ !== lastWrittenQ.current) {
+      lastWrittenQ.current = urlQ;
+      setQ(urlQ);
+    }
+  }, [urlQ]);
+  useEffect(() => () => {
+    if (qTimer.current) clearTimeout(qTimer.current);
+  }, []);
+  const onQueryChange = (value: string) => {
+    setQ(value);
+    if (qTimer.current) clearTimeout(qTimer.current);
+    qTimer.current = setTimeout(() => {
+      lastWrittenQ.current = value;
+      writeUrl({ q: value });
+    }, 250);
+  };
+
   const appParam = params.get("app") ?? "All";
   const app = isApp(appParam) ? appParam : "All";
   const surface = params.get("surface") ?? "All";
@@ -46,18 +85,7 @@ export function PromptList({ view, prompts, allPrompts, me }: Props) {
   const sortParam = params.get("sort") ?? "top";
   const sort: Sort = isSort(sortParam) ? sortParam : "top";
 
-  const setParams = useCallback(
-    (patch: Record<string, string | null>) => {
-      const next = new URLSearchParams(params.toString());
-      for (const [k, v] of Object.entries(patch)) {
-        if (v === null || v === "" || v === "All" || (k === "sort" && v === "top")) next.delete(k);
-        else next.set(k, v);
-      }
-      const qs = next.toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-    },
-    [params, pathname, router],
-  );
+  const setParams = writeUrl;
 
   const forkCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -128,7 +156,7 @@ export function PromptList({ view, prompts, allPrompts, me }: Props) {
           <input
             type="search"
             value={q}
-            onChange={(e) => setParams({ q: e.target.value })}
+            onChange={(e) => onQueryChange(e.target.value)}
             placeholder="Search prompts, descriptions, placeholders…"
             aria-label="Search prompts"
           />

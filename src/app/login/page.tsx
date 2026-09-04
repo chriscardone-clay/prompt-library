@@ -56,12 +56,7 @@ export default async function LoginPage({
           </form>
           {/* Inside an iframe (Notion), Google won't run its sign-in flow, so it opens in a tab. */}
           <div className={`${styles.actions} embed-only stack`}>
-            <EmbedSignIn next={next ?? "/"} googleMark={<GoogleMark />} />
-            {errorMessage ? (
-              <div className={styles.error} role="alert">
-                {errorMessage}
-              </div>
-            ) : null}
+            <EmbedSignIn googleMark={<GoogleMark />} />
           </div>
         </section>
 

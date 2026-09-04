@@ -51,10 +51,10 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (allowed && pathname === "/login") {
-    const url = request.nextUrl.clone();
-    url.pathname = "/";
-    url.search = "";
-    return NextResponse.redirect(url);
+    // Already signed in: continue to the requested page (e.g. the embed hand-off).
+    const next = request.nextUrl.searchParams.get("next") ?? "/";
+    const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/";
+    return NextResponse.redirect(new URL(safeNext, request.nextUrl.origin));
   }
 
   return response;

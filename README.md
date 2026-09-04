@@ -115,8 +115,9 @@ How it works, and what to expect:
 
 - The app sends `Content-Security-Policy: frame-ancestors` allowing Notion (`*.notion.so`, `*.notion.site`, `*.notion.com`) and itself. To allow another host, set `EMBED_FRAME_ANCESTORS` in Vercel to a space-separated list (or `*`) and redeploy.
 - Inside an iframe the header goes compact and gains an "open in a new tab" control.
-- Google will not run its sign-in flow inside an iframe, so the embedded login shows "Sign in with Google in a new tab". After signing in there, click "I've signed in, reload" in the embed.
-- The session cookie is `SameSite=None; Secure` so it is sent to the embed. Browsers that block third-party cookies (Safari by default, Chrome Incognito) will keep showing the sign-in screen inside Notion; those users should open the library in a tab. The Notion desktop app and Chrome with default settings work.
+- The embed keeps its own session. Google will not run OAuth inside an iframe, so "Continue with Google" in the embed opens a small popup; when Google finishes, the popup lands on `/auth/embed-done`, hands the one-time code back to the embed, and the embed exchanges it via `/auth/embed-callback`. Nothing depends on cookies leaking from the top-level site.
+- Session cookies are `SameSite=None; Secure; Partitioned` (CHIPS), so they live per top-level site. At the top level that is just the app itself; inside Notion they sit in the (notion.so, app) partition, which Chrome, Edge, Brave, Arc and Firefox allow even when third-party cookies are blocked. Safari blocks cookies in cross-site frames entirely and does not support CHIPS, so the embed will keep showing the sign-in screen there; Safari users should open the library in a tab.
+- If a browser blocks the popup, the embed shows an "Open Google sign-in" link instead; it must open in a new tab for the hand-off to work.
 
 ## Production setup from scratch
 

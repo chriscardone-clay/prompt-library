@@ -40,6 +40,29 @@ export async function signInWithGoogle(formData: FormData) {
   redirect(data.url);
 }
 
+/**
+ * Embedded sign-in (the app inside a Notion iframe). Starts the OAuth flow
+ * from the iframe's own cookie partition and returns Google's URL for the
+ * caller to open in a popup; Google refuses to run inside an iframe. The
+ * popup lands on /auth/embed-done, which hands the one-time code back to the
+ * iframe, and /auth/embed-callback exchanges it using the PKCE verifier cookie
+ * this call stored.
+ */
+export async function beginEmbedSignIn(): Promise<ActionResult<{ url: string }>> {
+  const supabase = await createClient();
+  const origin = await getRequestOrigin();
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: `${origin}/auth/embed-done`,
+      skipBrowserRedirect: true,
+      queryParams: { hd: ALLOWED_EMAIL_DOMAIN, prompt: "select_account" },
+    },
+  });
+  if (error || !data.url) return { ok: false, error: error?.message ?? "Could not start sign-in." };
+  return { ok: true, data: { url: data.url } };
+}
+
 export async function signOut() {
   const supabase = await createClient();
   await supabase.auth.signOut();
