@@ -38,7 +38,7 @@ import {
   isArchiveName,
   isSkillMd,
   parseFrontmatter,
-  titleFromSlug,
+  skillTitleFrom,
 } from "@/lib/skills";
 import { uploadSkillBinary } from "@/lib/supabase/storage";
 import { isBinaryFile, type Person, type PromptApp, type PromptDraft, type SkillFile } from "@/lib/types";
@@ -280,7 +280,8 @@ export function PromptEditor({
         const patch: Partial<PromptDraft> = {};
         if (md) {
           const fm = parseFrontmatter(md.content);
-          if (fm.name && !cur.title.trim()) patch.title = titleFromSlug(fm.name);
+          const title = skillTitleFrom(md.content);
+          if (title && !cur.title.trim()) patch.title = title;
           if (fm.description && !cur.description.trim()) patch.description = fm.description;
         }
         const idx = Math.max(merged.findIndex((x) => isSkillMd(x.name)), 0);

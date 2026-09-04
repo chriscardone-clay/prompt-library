@@ -19,13 +19,105 @@ export function skillMd(files: SkillFile[]): string {
   return f ? f.content : "";
 }
 
-/** name / description from a SKILL.md YAML-ish frontmatter block. */
-export function parseFrontmatter(md: string): { name?: string; description?: string } {
-  const m = /^\s*---\s*\n([\s\S]*?)\n---/.exec(md);
-  const block = m ? m[1] : md;
-  const name = /^\s*name:\s*(.+)$/m.exec(block)?.[1]?.trim();
-  const description = /^\s*description:\s*(.+)$/m.exec(block)?.[1]?.trim();
-  return { name: name || undefined, description: description || undefined };
+/**
+ * Read one top-level scalar from a YAML frontmatter block. Handles plain,
+ * "double-quoted" (with \" \\ \n escapes), 'single-quoted' ('' → ') and
+ * block (`>` folded / `|` literal) strings. Not a YAML parser; enough for
+ * SKILL.md's `name:` and `description:`.
+ */
+function yamlScalar(block: string, key: string): string | undefined {
+  const lines = block.split("\n");
+  const start = lines.findIndex((l) => new RegExp(`^${key}\\s*:`).test(l));
+  if (start < 0) return undefined;
+  let rest = lines[start].replace(new RegExp(`^${key}\\s*:\\s*`), "");
+  // Strip a trailing comment on plain scalars (" # …"), never inside quotes.
+  const blockIndicator = /^([>|])([+-]?)\s*(#.*)?$/.exec(rest);
+  if (blockIndicator) {
+    const folded = blockIndicator[1] === ">";
+    const body: string[] = [];
+    for (let i = start + 1; i < lines.length; i++) {
+      const l = lines[i];
+      if (l.trim() === "") {
+        body.push("");
+        continue;
+      }
+      if (!/^\s/.test(l)) break; // back to top level
+      body.push(l.replace(/^\s+/, ""));
+    }
+    const text = folded
+      ? body.join("\n").replace(/([^\n])\n(?!\n)/g, "$1 ").replace(/\n{2,}/g, "\n")
+      : body.join("\n");
+    return text.trim();
+  }
+  if (rest.startsWith('"')) {
+    // Double-quoted; may continue on following lines until the closing quote.
+    let i = start;
+    let buf = rest;
+    while (!/(^|[^\\])(\\\\)*"\s*(#.*)?$/.test(buf) && i + 1 < lines.length) {
+      i++;
+      buf += " " + lines[i].trim();
+    }
+    const inner = buf.replace(/^"/, "").replace(/"\s*(#.*)?$/, "");
+    return inner
+      .replace(/\\n/g, "\n")
+      .replace(/\\t/g, " ")
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, "\\")
+      .trim();
+  }
+  if (rest.startsWith("'")) {
+    let i = start;
+    let buf = rest;
+    while (!/(^|[^'])'(?:'')*\s*(#.*)?$/.test(buf.slice(1)) && i + 1 < lines.length) {
+      i++;
+      buf += " " + lines[i].trim();
+    }
+    const inner = buf.replace(/^'/, "").replace(/'\s*(#.*)?$/, "");
+    return inner.replace(/''/g, "'").trim();
+  }
+  // Plain scalar, possibly continued on indented lines.
+  let i = start;
+  while (i + 1 < lines.length && /^\s+\S/.test(lines[i + 1]) && !/^\s+\S+\s*:/.test(lines[i + 1])) {
+    i++;
+    rest += " " + lines[i].trim();
+  }
+  rest = rest.replace(/\s+#.*$/, "");
+  return rest.trim() || undefined;
+}
+
+/** Collapse whitespace and keep a description within the app's 600-char limit, ending on a sentence. */
+export function tidyDescription(text: string, max = 600): string {
+  const s = text.replace(/\s+/g, " ").trim();
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max);
+  const end = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));
+  return end > max * 0.5 ? cut.slice(0, end + 1) : cut.replace(/\s+\S*$/, "").trimEnd() + "…";
+}
+
+/**
+ * name / description from a SKILL.md YAML frontmatter block, plus the first
+ * "# Heading" of the body, which usually reads better as a title than the
+ * slug-style `name`.
+ */
+export function parseFrontmatter(md: string): { name?: string; description?: string; heading?: string } {
+  const src = md.replace(/\r\n/g, "\n");
+  const m = /^\s*---\s*\n([\s\S]*?)\n---[ \t]*(\n|$)/.exec(src);
+  const block = m ? m[1] : src;
+  const body = m ? src.slice(m.index + m[0].length) : src;
+  const name = yamlScalar(block, "name")?.replace(/\s+/g, " ");
+  const description = yamlScalar(block, "description");
+  const heading = /^\s*#\s+(.+?)\s*#*\s*$/m.exec(body)?.[1]?.replace(/\s+/g, " ").trim();
+  return {
+    name: name || undefined,
+    description: description ? tidyDescription(description) : undefined,
+    heading: heading && heading.length <= 200 ? heading : undefined,
+  };
+}
+
+/** Best display title for a skill from its SKILL.md: heading, else the frontmatter name, else none. */
+export function skillTitleFrom(md: string): string | undefined {
+  const fm = parseFrontmatter(md);
+  return fm.heading || (fm.name ? titleFromSlug(fm.name) : undefined);
 }
 
 /** "clay-formulas" → "Clay formulas" */
