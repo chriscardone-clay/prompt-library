@@ -1,0 +1,157 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding-top: 24px;
+  max-width: 960px;
+}
+
+.titleStack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.lede {
+  color: var(--fg-muted);
+  font-size: 15px;
+  max-width: 64ch;
+  text-wrap: pretty;
+}
+
+.block {
+  background: var(--bg-raised);
+  border-radius: var(--radius-xl);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.blockHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* One app */
+.card {
+  background: var(--oat-100);
+  border: 1px solid var(--warm-line);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.archived {
+  opacity: 0.7;
+}
+.cardRow,
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.row {
+  background: var(--oat-100);
+  border: 1px solid var(--warm-line);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+}
+.grow {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+.nameInput {
+  flex: 1 1 140px;
+  min-width: 120px;
+  max-width: 240px;
+  font-weight: 500;
+}
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+.check input {
+  accent-color: var(--fg);
+}
+
+.colour {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.colour input[type="color"] {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--grey-line);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+.hex {
+  width: 92px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  padding: 7px 9px;
+}
+.invalid {
+  border-color: var(--pom-400);
+}
+
+.surfaces {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+}
+.surfaceRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.surfaceName {
+  flex: 0 1 140px;
+  min-width: 100px;
+  font-weight: 500;
+}
+
+.saveRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.addRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.addRowCompact .grow {
+  font-size: 13px;
+  padding: 8px 10px;
+}

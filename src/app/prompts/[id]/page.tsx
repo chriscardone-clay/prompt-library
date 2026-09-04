@@ -13,6 +13,7 @@ import { SkillFiles } from "@/components/SkillFiles";
 import { SkillInstall } from "@/components/SkillInstall";
 import { SkillLinks } from "@/components/SkillLinks";
 import { AppTag, AudienceTag, PrivateTag, SkillTag } from "@/components/Tag";
+import { appTone } from "@/lib/catalog";
 import { skillSlug } from "@/lib/skills";
 import { ToastFromQuery } from "@/components/Toast";
 import { VariantsTree } from "@/components/VariantsTree";
@@ -20,6 +21,7 @@ import { VersionHistory } from "@/components/VersionHistory";
 import { VoteButton } from "@/components/VoteButton";
 import {
   canEdit,
+  getCatalog,
   getCurrentUser,
   getPrompt,
   listFeedback,
@@ -48,10 +50,11 @@ export default async function PromptPage({ params }: { params: Params }) {
   if (!prompt) notFound();
 
   const editable = canEdit(prompt, user);
-  const [nodes, feedback, versions] = await Promise.all([
+  const [nodes, feedback, versions, catalog] = await Promise.all([
     listPromptNodes(),
     listFeedback(id),
     editable ? listVersions(id) : Promise.resolve([]),
+    getCatalog(),
   ]);
   const parent = prompt.parentId ? nodes.find((n) => n.id === prompt.parentId) ?? null : null;
   const lastEditor = resolveLastEditor(prompt, nodes, user);
@@ -74,7 +77,7 @@ export default async function PromptPage({ params }: { params: Params }) {
             <div className={styles.tags}>
               {prompt.kind === "skill" ? <SkillTag /> : null}
               {prompt.apps.map((a) => (
-                <AppTag key={a.app} app={a} />
+                <AppTag key={a.app} app={a} tone={appTone(catalog, a.app)} />
               ))}
               {prompt.audiences.map((a) => (
                 <AudienceTag key={a} audience={a} />
@@ -134,7 +137,7 @@ export default async function PromptPage({ params }: { params: Params }) {
               <>
                 <SkillLinks links={prompt.links} />
                 <SkillFiles files={prompt.files} slug={skillSlug(prompt.title, prompt.files)} />
-                {prompt.files.length ? <SkillInstall apps={prompt.apps} /> : null}
+                {prompt.files.length ? <SkillInstall apps={prompt.apps} catalog={catalog} /> : null}
               </>
             ) : (
               <PromptBody promptId={prompt.id} body={prompt.body} />

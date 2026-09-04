@@ -1,4 +1,4 @@
-import type { App, Audience, Kind, Visibility } from "./constants";
+import type { Kind, Visibility } from "./constants";
 
 export interface Profile {
   id: string;
@@ -15,8 +15,9 @@ export interface Person {
   avatarUrl: string | null;
 }
 
+/** An app (from the catalog) a prompt is built for, with optional surfaces. */
 export interface PromptApp {
-  app: App;
+  app: string;
   surfaces: string[];
 }
 
@@ -60,8 +61,8 @@ export interface Prompt {
   notes: string;
   files: SkillFile[];
   links: SkillLink[];
-  /** Teams this is for; at least one. */
-  audiences: Audience[];
+  /** Teams (from the catalog) this is for; at least one. */
+  audiences: string[];
   visibility: Visibility;
   ownerId: string;
   owner: Person;
@@ -118,7 +119,7 @@ export interface PromptDraft {
   files: SkillFile[];
   links: SkillLink[];
   apps: PromptApp[];
-  audiences: Audience[];
+  audiences: string[];
   visibility: Visibility;
   forkNote: string;
   editors: string[]; // emails

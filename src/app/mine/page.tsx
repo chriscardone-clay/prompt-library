@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { Header } from "@/components/Header";
 import { PromptList } from "@/components/PromptList";
 import { ToastFromQuery } from "@/components/Toast";
-import { canEdit, getCurrentUser, listPrompts } from "@/lib/data";
+import { canEdit, getCatalog, getCurrentUser, listPrompts } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "My library" };
@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "My library" };
 export default async function MinePage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  const all = await listPrompts();
+  const [all, catalog] = await Promise.all([listPrompts(), getCatalog()]);
   const mine = all.filter((p) => canEdit(p, user));
 
   return (
@@ -22,7 +22,7 @@ export default async function MinePage() {
         <ToastFromQuery />
       </Suspense>
       <Suspense fallback={null}>
-        <PromptList view="mine" prompts={mine} allPrompts={all} me={user} />
+        <PromptList view="mine" prompts={mine} allPrompts={all} me={user} catalog={catalog} />
       </Suspense>
     </div>
   );

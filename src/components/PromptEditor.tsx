@@ -17,17 +17,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPrompt, updatePrompt } from "@/app/actions";
+import { activeApps, activeTeams, appTone, surfacesOf, type Catalog } from "@/lib/catalog";
 import {
   ALLOWED_EMAIL_DOMAIN,
-  APP_COLORS,
-  APPS,
-  AUDIENCES,
   MAX_SKILL_BYTES,
   MAX_SKILL_TEXT_BYTES,
   SKILL_TEMPLATE,
-  SURFACES,
-  type App,
-  type Audience,
   type Visibility,
 } from "@/lib/constants";
 import { personFromEmail } from "@/lib/people";
@@ -63,6 +58,7 @@ interface Props {
   /** Known people for editor rows (so invited teammates show their real name/avatar). */
   people: Person[];
   cancelHref: string;
+  catalog: Catalog;
 }
 
 const VIS_OPTIONS: { k: Visibility; label: string; sub: string; Icon: typeof LockSimple }[] = [
@@ -79,6 +75,7 @@ export function PromptEditor({
   me,
   people,
   cancelHref,
+  catalog,
 }: Props) {
   const [d, setD] = useState<PromptDraft>(initial);
   const [fileIdx, setFileIdx] = useState(0);
@@ -137,11 +134,11 @@ export function PromptEditor({
   }, [people, owner, me]);
 
   // ── Apps ──────────────────────────────────────────────────────────
-  const toggleApp = (a: App) => {
+  const toggleApp = (a: string) => {
     const has = d.apps.some((x) => x.app === a);
     upd({ apps: has ? d.apps.filter((x) => x.app !== a) : [...d.apps, { app: a, surfaces: [] }] });
   };
-  const setSurface = (a: App, surf: string | null) => {
+  const setSurface = (a: string, surf: string | null) => {
     upd({
       apps: d.apps.map((x): PromptApp => {
         if (x.app !== a) return x;
@@ -623,23 +620,27 @@ export function PromptEditor({
                 <span className="tiny muted">Pick every tool this works in.</span>
               </div>
               <div className={styles.chips}>
-                {APPS.map((a) => (
+                {[
+                  ...activeApps(catalog).map((a) => a.name),
+                  // Keep an archived app visible while it's still selected on this item.
+                  ...d.apps.map((x) => x.app).filter((n) => !activeApps(catalog).some((a) => a.name === n)),
+                ].map((a) => (
                   <Chip
                     key={a}
                     label={a}
                     size="lg"
                     selected={d.apps.some((x) => x.app === a)}
-                    tone={APP_COLORS[a]}
+                    tone={appTone(catalog, a)}
                     onClick={() => toggleApp(a)}
                   />
                 ))}
               </div>
-              {d.apps.filter((x) => SURFACES[x.app]).length ? (
+              {d.apps.filter((x) => surfacesOf(catalog, x.app).length).length ? (
                 <div className={styles.surfaceGroups}>
                   {d.apps
-                    .filter((x) => SURFACES[x.app])
+                    .filter((x) => surfacesOf(catalog, x.app).length)
                     .map((x) => {
-                      const tone = APP_COLORS[x.app];
+                      const tone = appTone(catalog, x.app);
                       const pill = (label: string, on: boolean, onClick: () => void) => (
                         <button
                           key={label}
@@ -664,7 +665,7 @@ export function PromptEditor({
                           </div>
                           <div className={styles.surfacePills}>
                             {pill("Anywhere", x.surfaces.length === 0, () => setSurface(x.app, null))}
-                            {SURFACES[x.app]!.map((s) => pill(s, x.surfaces.includes(s), () => setSurface(x.app, s)))}
+                            {surfacesOf(catalog, x.app).map((s) => pill(s, x.surfaces.includes(s), () => setSurface(x.app, s)))}
                           </div>
                         </div>
                       );
@@ -679,7 +680,10 @@ export function PromptEditor({
                 <span className="tiny muted">Pick every team this is for.</span>
               </div>
               <div className={styles.chips}>
-                {AUDIENCES.map((a: Audience) => (
+                {[
+                  ...activeTeams(catalog).map((t) => t.name),
+                  ...d.audiences.filter((n) => !activeTeams(catalog).some((t) => t.name === n)),
+                ].map((a) => (
                   <Chip
                     key={a}
                     label={a}

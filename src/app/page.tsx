@@ -3,14 +3,14 @@ import { Suspense } from "react";
 import { Header } from "@/components/Header";
 import { PromptList } from "@/components/PromptList";
 import { ToastFromQuery } from "@/components/Toast";
-import { getCurrentUser, listPrompts } from "@/lib/data";
+import { getCatalog, getCurrentUser, listPrompts } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
 export default async function DiscoverPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  const prompts = await listPrompts();
+  const [prompts, catalog] = await Promise.all([listPrompts(), getCatalog()]);
 
   return (
     <div className="container">
@@ -19,7 +19,7 @@ export default async function DiscoverPage() {
         <ToastFromQuery />
       </Suspense>
       <Suspense fallback={null}>
-        <PromptList view="discover" prompts={prompts} me={user} />
+        <PromptList view="discover" prompts={prompts} me={user} catalog={catalog} />
       </Suspense>
     </div>
   );

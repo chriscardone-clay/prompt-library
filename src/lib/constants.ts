@@ -1,27 +1,10 @@
-export const APPS = ["Town", "Claude", "ChatGPT", "Claygent", "Monty", "Granola"] as const;
-export type App = (typeof APPS)[number];
-
-export const AUDIENCES = ["EPD", "GS", "GTM", "Other"] as const;
-export type Audience = (typeof AUDIENCES)[number];
+/**
+ * Static app constants. Apps, surfaces and teams are NOT here any more: they
+ * live in the database (see src/lib/catalog.ts and /admin).
+ */
 
 export const VISIBILITIES = ["public", "private"] as const;
 export type Visibility = (typeof VISIBILITIES)[number];
-
-/** Tag colours per app — 100 tint background, 400 shade ink (Terra palette). */
-export const APP_COLORS: Record<App, { bg: string; fg: string }> = {
-  Town: { bg: "#F5F3FF", fg: "#6D4CD6" },
-  Claude: { bg: "#FFF3ED", fg: "#B53D0A" },
-  ChatGPT: { bg: "#FCFEE2", fg: "#808000" },
-  Claygent: { bg: "#F0FCFF", fg: "#008BAD" },
-  Monty: { bg: "#FFF0FA", fg: "#CC089E" },
-  Granola: { bg: "#FEFAE8", fg: "#9E5802" },
-};
-
-/** Apps that have distinct surfaces a prompt can be scoped to. */
-export const SURFACES: Partial<Record<App, readonly string[]>> = {
-  Claude: ["Chat", "Code", "Cowork"],
-  ChatGPT: ["Chat", "Codex", "Work"],
-};
 
 export const KINDS = ["prompt", "skill"] as const;
 export type Kind = (typeof KINDS)[number];
@@ -42,24 +25,6 @@ export const SKILL_BUCKET = "skill-files";
 export const SKILL_TEMPLATE =
   "---\nname: my-skill\ndescription: One sentence on what this skill does and when to use it.\n---\n\n# My skill\n\n## When to use\n\n## Steps\n\n1. \n2. \n\n## Output format\n";
 
-/** How to install a skill's files, keyed by "App · Surface" or just "App". */
-export const INSTALL: Record<string, string> = {
-  "Claude · Code":
-    "Copy the folder into ~/.claude/skills/ (or .claude/skills/ in your repo). Claude picks it up on the next session.",
-  "Claude · Cowork": "Download the .skill file and upload it under Settings, Capabilities, Skills.",
-  "Claude · Chat": "Download the .skill file and upload it under Settings, Capabilities, Skills.",
-  Claude:
-    "Download the .skill file and upload it under Settings, Capabilities, Skills, or unzip it into ~/.claude/skills/ for Claude Code.",
-  "ChatGPT · Codex": "Reference the files from your AGENTS.md so Codex reads them at the start of a task.",
-  "ChatGPT · Work": "Add SKILL.md and its files to the project’s files.",
-  "ChatGPT · Chat": "Add SKILL.md and its files to a project or custom GPT’s knowledge.",
-  ChatGPT: "Add the files to a project’s knowledge, or reference them from AGENTS.md for Codex.",
-  Town: "Upload the files to the agent’s knowledge.",
-  Claygent: "Paste SKILL.md into the Claygent column prompt.",
-  Monty: "Upload the files to Monty’s knowledge.",
-  Granola: "Paste SKILL.md into a Granola recipe.",
-};
-
 export const SORTS = ["top", "new", "updated"] as const;
 export type Sort = (typeof SORTS)[number];
 export const SORT_LABELS: Record<Sort, string> = {
@@ -71,12 +36,10 @@ export const SORT_LABELS: Record<Sort, string> = {
 export const ALLOWED_EMAIL_DOMAIN =
   process.env.NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN?.trim().toLowerCase() || "clay.com";
 
-export function isApp(x: string): x is App {
-  return (APPS as readonly string[]).includes(x);
-}
-export function isAudience(x: string): x is Audience {
-  return (AUDIENCES as readonly string[]).includes(x);
-}
+/** Slack DM with the author, linked from the footer credit. */
+export const AUTHOR_SLACK_URL = "https://clay-hq.slack.com/archives/D09HBPERX1S";
+export const AUTHOR_HANDLE = "@cc";
+
 export function isVisibility(x: string): x is Visibility {
   return (VISIBILITIES as readonly string[]).includes(x);
 }

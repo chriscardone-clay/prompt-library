@@ -1,4 +1,4 @@
-import { APP_COLORS, INSTALL } from "@/lib/constants";
+import { appTone, installFor, type Catalog } from "@/lib/catalog";
 import type { PromptApp } from "@/lib/types";
 import styles from "./Skill.module.css";
 
@@ -11,16 +11,17 @@ interface Row {
 }
 
 /** Per-app install instructions for a skill's files, one line per distinct instruction. */
-export function SkillInstall({ apps }: { apps: PromptApp[] }) {
+export function SkillInstall({ apps, catalog }: { apps: PromptApp[]; catalog: Catalog }) {
   const seen = new Set<string>();
   const rows: Row[] = [];
   for (const a of apps) {
-    const keys = a.surfaces.length ? a.surfaces.map((s) => `${a.app} · ${s}`) : [a.app];
-    for (const k of keys) {
-      const text = INSTALL[k] ?? INSTALL[a.app];
+    const tone = appTone(catalog, a.app);
+    const entries = a.surfaces.length ? a.surfaces.map((s) => ({ key: `${a.app} · ${s}`, s })) : [{ key: a.app, s: undefined }];
+    for (const e of entries) {
+      const text = installFor(catalog, a.app, e.s);
       if (!text || seen.has(text)) continue;
       seen.add(text);
-      rows.push({ key: k, label: k, text, bg: APP_COLORS[a.app].bg, fg: APP_COLORS[a.app].fg });
+      rows.push({ key: e.key, label: e.key, text, bg: tone.bg, fg: tone.fg });
     }
   }
   if (!rows.length) return null;

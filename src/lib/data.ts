@@ -1,7 +1,8 @@
 import "server-only";
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
-import { isApp, isAudience, isVisibility } from "./constants";
+import { type Catalog, type CatalogApp, type CatalogTeam } from "./catalog";
+import { isVisibility } from "./constants";
 import { personFromEmail, personFromProfile, UNKNOWN_PERSON } from "./people";
 import { asFiles, asLinks } from "./skills";
 import type { Feedback, Person, Profile, Prompt, PromptNode, PromptVersion } from "./types";
@@ -59,10 +60,7 @@ function toPrompt(r: PromptRow): Prompt {
     notes: r.notes ?? "",
     files: asFiles(r.files),
     links: asLinks(r.links),
-    audiences: (() => {
-      const a = (r.audiences ?? []).filter(isAudience);
-      return a.length ? a : ["Other"];
-    })(),
+    audiences: (r.audiences ?? []).filter((a) => typeof a === "string" && a.trim()),
     visibility: isVisibility(r.visibility) ? r.visibility : "public",
     ownerId: r.owner_id,
     owner: toPerson(r.owner),
@@ -72,8 +70,8 @@ function toPrompt(r: PromptRow): Prompt {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     apps: (r.prompt_apps ?? [])
-      .filter((a) => isApp(a.app))
-      .map((a) => ({ app: a.app as Prompt["apps"][number]["app"], surfaces: a.surfaces ?? [] })),
+      .filter((a) => typeof a.app === "string" && a.app)
+      .map((a) => ({ app: a.app, surfaces: a.surfaces ?? [] })),
     editors: (r.prompt_editors ?? []).map((e) =>
       e.profile ? personFromProfile(e.profile) : personFromEmail(e.email),
     ),
@@ -103,6 +101,74 @@ export const getCurrentUser = cache(async (): Promise<Profile | null> => {
     avatar_url: meta.avatar_url || meta.picture || null,
   };
 });
+
+/** Is the current user on the admins list? (Server-side check; RLS enforces it too.) */
+export const isAdmin = cache(async (): Promise<boolean> => {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("is_admin");
+  return !error && data === true;
+});
+
+// ── Catalog (apps, surfaces, teams) ─────────────────────────────────
+export const getCatalog = cache(async (): Promise<Catalog> => {
+  const supabase = await createClient();
+  const [appsRes, surfRes, teamsRes] = await Promise.all([
+    supabase.from("apps").select("name, bg, fg, install, archived, position").order("position").order("name"),
+    supabase.from("surfaces").select("app, name, install, position").order("position").order("name"),
+    supabase.from("teams").select("name, archived, position").order("position").order("name"),
+  ]);
+  if (appsRes.error) throw new Error(`getCatalog apps: ${appsRes.error.message}`);
+  if (surfRes.error) throw new Error(`getCatalog surfaces: ${surfRes.error.message}`);
+  if (teamsRes.error) throw new Error(`getCatalog teams: ${teamsRes.error.message}`);
+  type AppRow = { name: string; bg: string; fg: string; install: string | null; archived: boolean; position: number };
+  type SurfRow = { app: string; name: string; install: string | null; position: number };
+  type TeamRow = { name: string; archived: boolean; position: number };
+  const surfaces = (surfRes.data ?? []) as SurfRow[];
+  const apps: CatalogApp[] = ((appsRes.data ?? []) as AppRow[]).map((a) => ({
+    name: a.name,
+    bg: a.bg,
+    fg: a.fg,
+    install: a.install ?? "",
+    archived: a.archived,
+    position: a.position,
+    surfaces: surfaces
+      .filter((s) => s.app === a.name)
+      .map((s) => ({ name: s.name, install: s.install ?? "", position: s.position })),
+  }));
+  const teams: CatalogTeam[] = ((teamsRes.data ?? []) as TeamRow[]).map((t) => ({
+    name: t.name,
+    archived: t.archived,
+    position: t.position,
+  }));
+  return { apps, teams };
+});
+
+/** How many items use each app / surface / team. Admin page only. */
+export async function getCatalogUsage(): Promise<{
+  apps: Record<string, number>;
+  surfaces: Record<string, number>; // key "App · Surface"
+  teams: Record<string, number>;
+}> {
+  const supabase = await createClient();
+  const [pa, pr] = await Promise.all([
+    supabase.from("prompt_apps").select("app, surfaces"),
+    supabase.from("prompts").select("audiences"),
+  ]);
+  const apps: Record<string, number> = {};
+  const surfaces: Record<string, number> = {};
+  const teams: Record<string, number> = {};
+  for (const row of (pa.data ?? []) as { app: string; surfaces: string[] | null }[]) {
+    apps[row.app] = (apps[row.app] ?? 0) + 1;
+    for (const s of row.surfaces ?? []) {
+      const k = `${row.app} · ${s}`;
+      surfaces[k] = (surfaces[k] ?? 0) + 1;
+    }
+  }
+  for (const row of (pr.data ?? []) as { audiences: string[] | null }[]) {
+    for (const t of row.audiences ?? []) teams[t] = (teams[t] ?? 0) + 1;
+  }
+  return { apps, surfaces, teams };
+}
 
 // ── Prompts ─────────────────────────────────────────────────────────
 /** Every prompt the current user may see (RLS enforces public / owner / editor). */

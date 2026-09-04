@@ -5,20 +5,15 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  APP_COLORS,
-  APPS,
-  AUDIENCES,
-  isApp,
-  isAudience,
-  isSort,
-  SORT_LABELS,
-  SORTS,
-  SURFACES,
-  type App,
-  type Audience,
-  type Kind,
-  type Sort,
-} from "@/lib/constants";
+  activeApps,
+  activeTeams,
+  appTone,
+  isKnownApp,
+  isKnownTeam,
+  surfacesOf,
+  type Catalog,
+} from "@/lib/catalog";
+import { isSort, SORT_LABELS, SORTS, type Kind, type Sort } from "@/lib/constants";
 import { ago, plural } from "@/lib/format";
 import type { Profile, Prompt } from "@/lib/types";
 import { Avatar } from "./Avatar";
@@ -32,24 +27,25 @@ interface Props {
   /** Used for fork counts on the My library view, where `prompts` is a subset. */
   allPrompts?: Prompt[];
   me: Profile;
+  catalog: Catalog;
 }
 
 type KindFilter = Kind | "all";
 
 /** "Claude:Chat|Cowork,ChatGPT:Codex" ⇄ { Claude: ["Chat","Cowork"], ChatGPT: ["Codex"] } */
-function parseSurfaces(raw: string | null): Partial<Record<App, string[]>> {
-  const out: Partial<Record<App, string[]>> = {};
+function parseSurfaces(raw: string | null, catalog: Catalog): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
   if (!raw) return out;
   for (const part of raw.split(",")) {
     const [app, list] = part.split(":");
-    if (!isApp(app)) continue;
-    const allowed = SURFACES[app] ?? [];
+    if (!isKnownApp(catalog, app)) continue;
+    const allowed = surfacesOf(catalog, app);
     const picked = (list ?? "").split("|").filter((s) => allowed.includes(s));
     if (picked.length) out[app] = picked;
   }
   return out;
 }
-function serialiseSurfaces(s: Partial<Record<App, string[]>>): string | null {
+function serialiseSurfaces(s: Record<string, string[]>): string | null {
   const parts = Object.entries(s)
     .filter(([, v]) => v && v.length)
     .map(([app, v]) => `${app}:${v!.join("|")}`);
@@ -57,7 +53,7 @@ function serialiseSurfaces(s: Partial<Record<App, string[]>>): string | null {
 }
 const listParam = (v: string[]) => (v.length ? v.join(",") : null);
 
-export function PromptList({ view, prompts, allPrompts, me }: Props) {
+export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
   const params = useSearchParams();
   const pathname = usePathname();
 
@@ -113,27 +109,27 @@ export function PromptList({ view, prompts, allPrompts, me }: Props) {
   // ── Filter state (all in the URL) ─────────────────────────────────
   const kindParam = params.get("kind");
   const kind: KindFilter = kindParam === "prompts" ? "prompt" : kindParam === "skills" ? "skill" : "all";
-  const apps = (params.get("apps") ?? "").split(",").filter(isApp);
-  const surfaces = parseSurfaces(params.get("surfaces"));
-  const teams = (params.get("teams") ?? "").split(",").filter(isAudience);
+  const apps = (params.get("apps") ?? "").split(",").filter((a) => isKnownApp(catalog, a));
+  const surfaces = parseSurfaces(params.get("surfaces"), catalog);
+  const teams = (params.get("teams") ?? "").split(",").filter((t) => isKnownTeam(catalog, t));
   const sortParam = params.get("sort") ?? "top";
   const sort: Sort = isSort(sortParam) ? sortParam : "top";
   const filtersOpen = params.get("filters") === "1";
 
-  const setApps = (next: App[], nextSurfaces = surfaces) =>
+  const setApps = (next: string[], nextSurfaces = surfaces) =>
     writeUrl({ apps: listParam(next), surfaces: serialiseSurfaces(nextSurfaces) });
-  const toggleApp = (app: App) => {
+  const toggleApp = (app: string) => {
     const on = apps.includes(app);
     const nextSurfaces = { ...surfaces };
     if (on) delete nextSurfaces[app];
     setApps(on ? apps.filter((a) => a !== app) : [...apps, app], nextSurfaces);
   };
-  const toggleSurface = (app: App, sf: string) => {
+  const toggleSurface = (app: string, sf: string) => {
     const cur = surfaces[app] ?? [];
     const next = { ...surfaces, [app]: cur.includes(sf) ? cur.filter((x) => x !== sf) : [...cur, sf] };
     writeUrl({ surfaces: serialiseSurfaces(next) });
   };
-  const toggleTeam = (t: Audience) =>
+  const toggleTeam = (t: string) =>
     writeUrl({ teams: listParam(teams.includes(t) ? teams.filter((x) => x !== t) : [...teams, t]) });
   const clearFilters = () => {
     if (qTimer.current) clearTimeout(qTimer.current);
@@ -204,8 +200,8 @@ export function PromptList({ view, prompts, allPrompts, me }: Props) {
       return {
         key: `a-${app}`,
         label: want.length ? `${app} · ${want.join(", ")}` : app,
-        bg: APP_COLORS[app].bg,
-        fg: APP_COLORS[app].fg,
+        bg: appTone(catalog, app).bg,
+        fg: appTone(catalog, app).fg,
         remove: () => toggleApp(app),
       };
     }),
@@ -325,10 +321,10 @@ export function PromptList({ view, prompts, allPrompts, me }: Props) {
             <div className={styles.group}>
               <span className="eyebrow">App</span>
               <div className={styles.optionList}>
-                {APPS.map((app) => {
+                {activeApps(catalog).map(({ name: app }) => {
                   const on = apps.includes(app);
-                  const tone = APP_COLORS[app];
-                  const surfList = SURFACES[app] ?? [];
+                  const tone = appTone(catalog, app);
+                  const surfList = surfacesOf(catalog, app);
                   const want = surfaces[app] ?? [];
                   return (
                     <div key={app} className={styles.optionBlock}>
@@ -382,7 +378,7 @@ export function PromptList({ view, prompts, allPrompts, me }: Props) {
             <div className={styles.group}>
               <span className="eyebrow">Team</span>
               <div className={styles.optionList}>
-                {AUDIENCES.map((t) => {
+                {activeTeams(catalog).map(({ name: t }) => {
                   const on = teams.includes(t);
                   return (
                     <button
@@ -413,7 +409,7 @@ export function PromptList({ view, prompts, allPrompts, me }: Props) {
           {list.length ? (
             <div className={styles.grid}>
               {list.map((p) => (
-                <PromptCard key={p.id} prompt={p} forks={forkCounts.get(p.id) ?? 0} meId={me.id} />
+                <PromptCard key={p.id} prompt={p} forks={forkCounts.get(p.id) ?? 0} meId={me.id} catalog={catalog} />
               ))}
             </div>
           ) : (
@@ -444,7 +440,7 @@ export function PromptList({ view, prompts, allPrompts, me }: Props) {
   );
 }
 
-function PromptCard({ prompt: p, forks, meId }: { prompt: Prompt; forks: number; meId: string }) {
+function PromptCard({ prompt: p, forks, meId, catalog }: { prompt: Prompt; forks: number; meId: string; catalog: Catalog }) {
   const parts: string[] = [];
   if (p.kind === "skill") {
     if (p.files.length) parts.push(plural(p.files.length, "file"));
@@ -459,7 +455,7 @@ function PromptCard({ prompt: p, forks, meId }: { prompt: Prompt; forks: number;
       <div className={styles.cardTags}>
         {p.kind === "skill" ? <SkillTag /> : null}
         {p.apps.map((a) => (
-          <AppTag key={a.app} app={a} />
+          <AppTag key={a.app} app={a} tone={appTone(catalog, a.app)} />
         ))}
         {p.audiences.map((a) => (
           <AudienceTag key={a} audience={a} light />

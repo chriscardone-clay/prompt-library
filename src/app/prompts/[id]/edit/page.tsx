@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { Header } from "@/components/Header";
 import { PromptEditor } from "@/components/PromptEditor";
-import { canEdit, getCurrentUser, getPrompt } from "@/lib/data";
+import { canEdit, getCatalog, getCurrentUser, getPrompt } from "@/lib/data";
 import { personFromProfile } from "@/lib/people";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +11,7 @@ export const metadata: Metadata = { title: "Edit" };
 export default async function EditPromptPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  const catalog = await getCatalog();
   const { id } = await params;
   const prompt = await getPrompt(id);
   if (!prompt) notFound();
@@ -39,6 +40,7 @@ export default async function EditPromptPage({ params }: { params: Promise<{ id:
         owner={prompt.owner}
         me={personFromProfile(user)}
         people={prompt.editors}
+        catalog={catalog}
         cancelHref={`/prompts/${prompt.id}`}
       />
     </div>

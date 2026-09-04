@@ -18,7 +18,7 @@ There is no separate API server. Server Components read through the Supabase cli
 
 ## Features
 
-- **Discover / My library** with a toolbar: search, an All / Prompts / Skills toggle, sort (top / newest / recently updated), and a Filters panel with multi-select apps (Town, Claude, ChatGPT, Claygent, Monty, Granola), per-app surfaces for Claude and ChatGPT, and multi-select teams. Active filters show as removable chips. Everything lives in the URL (`kind`, `apps`, `surfaces`, `teams`, `q`, `sort`, `filters`) so views are shareable.
+- **Discover / My library** with a toolbar: search, an All / Prompts / Skills toggle, sort (top / newest / recently updated), and a Filters panel with multi-select apps (Town, Claude, ChatGPT, Claygent, Monty, Granola out of the box), per-app surfaces, and multi-select teams. Active filters show as removable chips. Everything lives in the URL (`kind`, `apps`, `surfaces`, `teams`, `q`, `sort`, `filters`) so views are shareable.
 - **Delete** from the detail page (owner only) with an inline "Delete for everyone?" confirm. Forks of a deleted item move up to its parent and get the note "Original was deleted"; its stored binary files are removed.
 - **How to use** notes on any prompt: when to use it, tips, connectors it needs. Shown under the prompt, never copied with it. Lines starting with `- ` render as bullets; a short line ending in `:` renders as a label.
 - **Skills** live alongside prompts. Discover has a Prompts / Skills toggle (`/?kind=skills`, or `/skills`); My library shows both. A skill is a bundle of text files (SKILL.md plus references) and/or links to where it lives in its home app. The detail page shows file tabs with copy, download, and "Download `<name>.skill`" (a zip of the folder), "Open it where it lives" link cards, and per-app install instructions. The editor supports adding files by hand or uploading a `.skill`/`.zip` (unpacked in the browser; title and description fill in from SKILL.md frontmatter). Text files stay inline and editable; binary files (fonts, images, PDFs…) are uploaded from the browser into the private `skill-files` Storage bucket under `<prompt id>/<path>` and referenced from the file list, so the `.skill` download is lossless. Storage access follows the prompt's visibility. Limits: 5 MB per skill, 1.5 MB of inline text, 60 files. Skills fork, upvote, take feedback and keep version history like prompts; versions snapshot files and links too.
@@ -29,6 +29,7 @@ There is no separate API server. Server Components read through the Supabase cli
 - **Public / private** visibility. Private prompts are visible only to the owner and editors, enforced in the database.
 - **Version history**: every content change snapshots the previous version automatically (Postgres trigger). Owners and editors can restore any version.
 - **Google sign-in restricted to clay.com**, enforced three times: the OAuth `hd` hint, the auth callback, and a database trigger that refuses non-clay accounts.
+- **Admin** (`/admin`, linked from the footer only for admins; everyone else gets the not-found page). Apps, their surfaces, and teams are rows in the database, not code, so they can be added, renamed, recoloured, reordered, archived, and deleted without a deploy. Renames cascade into every item that uses the old name (Postgres triggers). Anything still in use can be archived (hidden from pickers and filters, still shown on existing items) but not deleted. Admins are managed on the same page; the seed admin is chris.cardone@clay.com and you can't remove yourself. The footer credit "Made by @cc" links to Chris's Slack.
 
 ## Project layout
 
@@ -49,10 +50,12 @@ src/
     login/page.tsx           Google sign-in
     auth/callback/route.ts   OAuth return leg
     actions.ts               all Server Actions (writes)
+    admin/                   catalog + admins management (admins only)
   lib/
     data.ts                  all reads (server only)
+    catalog.ts               apps / surfaces / teams types + helpers (data comes from the DB)
     supabase/                server / browser / proxy clients
-    constants.ts             apps, surfaces, audiences, colours
+    constants.ts             visibilities, kinds, size caps, footer credit
     placeholders.ts          {{placeholder}} parsing + filling
   components/                UI
 public/
@@ -173,7 +176,9 @@ The domain is read from `NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN` in the app and from `
 ```
 profiles          mirrors auth.users (name, email, avatar) via trigger
 prompts           kind (prompt | skill), title, description, body, notes (how to use), files + links (JSON, skills only), audiences[] (one or more teams), visibility, owner, parent (fork), fork_note
-prompt_apps       which tools it's built for + optional surfaces (Claude: Chat/Code/Cowork, ChatGPT: Chat/Codex/Work)
+prompt_apps       which tools it's built for + optional surfaces (text, validated against the catalog by trigger)
+apps / surfaces / teams   the catalog: name, tag colours + install text (apps), position, archived flag; renames cascade into prompts and prompt_apps
+admins            emails allowed to edit the catalog (is_admin() RPC)
 prompt_editors    invited by email; linked to a profile on first sign-in
 prompt_upvotes    one per user per prompt
 prompt_versions   automatic snapshot of the previous content on every change
@@ -181,7 +186,7 @@ feedback          note, resolved flag, single owner/editor reply
 storage           bucket skill-files: binary skill files at <prompt id>/<file path> (RLS mirrors prompt visibility)
 ```
 
-Access rules (RLS): everyone at Clay can read public prompts; private prompts are readable by owner + editors; owner + editors can update prompts, manage apps, add editors, reply to and resolve feedback; only the owner can delete a prompt or remove editors; anyone can upvote, fork and post feedback on a prompt they can see; version history is visible to owner + editors only.
+Access rules (RLS): everyone at Clay can read public prompts; private prompts are readable by owner + editors; owner + editors can update prompts, manage apps, add editors, reply to and resolve feedback; only the owner can delete a prompt or remove editors; anyone can upvote, fork and post feedback on a prompt they can see; version history is visible to owner + editors only. Everyone can read the catalog; only admins can change it.
 
 ## Scripts
 

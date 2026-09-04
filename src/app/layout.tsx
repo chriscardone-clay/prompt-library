@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
+import { Suspense } from "react";
+import { Footer } from "@/components/Footer";
 import { ToastProvider } from "@/components/Toast";
 import "./globals.css";
 
@@ -66,7 +68,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
-        <ToastProvider>{children}</ToastProvider>
+        <ToastProvider>
+          {children}
+          <Suspense fallback={null}>
+            <Footer />
+          </Suspense>
+        </ToastProvider>
       </body>
     </html>
   );

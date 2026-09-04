@@ -2,17 +2,16 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { type Catalog, isKnownApp, isKnownTeam, surfacesOf } from "@/lib/catalog";
 import {
   ALLOWED_EMAIL_DOMAIN,
-  isApp,
-  isAudience,
   isVisibility,
   MAX_SKILL_BYTES,
   MAX_SKILL_FILES,
   MAX_SKILL_TEXT_BYTES,
   SKILL_BUCKET,
-  SURFACES,
 } from "@/lib/constants";
+import { getCatalog } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
 import { getRequestOrigin } from "@/lib/site";
 import { fileBytes, formatBytes, linkHost, skillMd } from "@/lib/skills";
@@ -93,7 +92,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * ids) a binary file may point into: the prompt itself, and for forks the
  * parent it was copied from.
  */
-function normaliseDraft(input: PromptDraft, allowedFolders: string[]): ActionResult<PromptDraft> {
+function normaliseDraft(input: PromptDraft, allowedFolders: string[], catalog: Catalog): ActionResult<PromptDraft> {
   const kind = input.kind === "skill" ? "skill" : "prompt";
   const title = (input.title ?? "").trim();
   const description = (input.description ?? "").trim();
@@ -185,14 +184,17 @@ function normaliseDraft(input: PromptDraft, allowedFolders: string[]): ActionRes
   const seen = new Set<string>();
   const apps: PromptApp[] = [];
   for (const a of input.apps ?? []) {
-    if (!isApp(a.app) || seen.has(a.app)) continue;
-    seen.add(a.app);
-    const allowed = SURFACES[a.app] ?? [];
-    apps.push({ app: a.app, surfaces: (a.surfaces ?? []).filter((s) => allowed.includes(s)) });
+    const name = String(a?.app ?? "").trim();
+    if (!isKnownApp(catalog, name) || seen.has(name)) continue;
+    seen.add(name);
+    const allowed = surfacesOf(catalog, name);
+    apps.push({ app: name, surfaces: (a.surfaces ?? []).filter((s) => allowed.includes(s)) });
   }
   if (!apps.length) return { ok: false, error: "Pick at least one tool." };
 
-  const audiences = Array.from(new Set((input.audiences ?? []).filter(isAudience)));
+  const audiences = Array.from(
+    new Set((input.audiences ?? []).map((t) => String(t ?? "").trim()).filter((t) => isKnownTeam(catalog, t))),
+  );
   if (!audiences.length) return { ok: false, error: "Pick at least one team." };
   if (!isVisibility(input.visibility)) return { ok: false, error: "Pick a visibility." };
 
@@ -247,7 +249,7 @@ export async function createPrompt(
   const { data: clash } = await supabase.from("prompts").select("id").eq("id", id).maybeSingle();
   if (clash) return { ok: false, error: "That draft was already published. Refresh and try again." };
 
-  const v = normaliseDraft(input, parentId ? [id, parentId] : [id]);
+  const v = normaliseDraft(input, parentId ? [id, parentId] : [id], await getCatalog());
   if (!v.ok) return v;
   const d = v.data;
 
@@ -310,7 +312,7 @@ export async function updatePrompt(
   if (loadErr || !existing) return { ok: false, error: "Prompt not found." };
 
   const parentFolder = typeof existing.parent_id === "string" ? [existing.parent_id] : [];
-  const v = normaliseDraft(input, [id, ...parentFolder]);
+  const v = normaliseDraft(input, [id, ...parentFolder], await getCatalog());
   if (!v.ok) return v;
   const d = v.data;
   if ((existing.kind ?? "prompt") !== d.kind) {

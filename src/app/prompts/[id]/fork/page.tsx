@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { Header } from "@/components/Header";
 import { PromptEditor } from "@/components/PromptEditor";
-import { getCurrentUser, getPrompt } from "@/lib/data";
+import { getCatalog, getCurrentUser, getPrompt } from "@/lib/data";
 import { personFromProfile } from "@/lib/people";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +11,7 @@ export const metadata: Metadata = { title: "Fork" };
 export default async function ForkPromptPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  const catalog = await getCatalog();
   const { id } = await params;
   const parent = await getPrompt(id);
   if (!parent) notFound();
@@ -40,6 +41,7 @@ export default async function ForkPromptPage({ params }: { params: Promise<{ id:
         owner={me}
         me={me}
         people={[]}
+        catalog={catalog}
         cancelHref={`/prompts/${parent.id}`}
       />
     </div>
