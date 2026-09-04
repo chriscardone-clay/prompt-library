@@ -447,6 +447,18 @@ textarea:focus {
   border: 0;
 }
 
+/* ── Embedded (inside an iframe, e.g. Notion) ─────────────────────── */
+/* Elements marked .embed-only render only inside an iframe; .embed-hide only outside one. */
+html:not([data-embedded]) .embed-only {
+  display: none !important;
+}
+html[data-embedded] .embed-hide {
+  display: none !important;
+}
+html[data-embedded] .container {
+  padding-bottom: 40px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

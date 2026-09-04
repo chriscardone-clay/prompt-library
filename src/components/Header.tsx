@@ -1,7 +1,9 @@
 import { Plus } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
+import { Suspense } from "react";
 import type { Profile } from "@/lib/types";
 import { AccountMenu } from "./AccountMenu";
+import { OpenInNewTab } from "./OpenInNewTab";
 import styles from "./Header.module.css";
 
 interface Props {
@@ -36,8 +38,11 @@ export function Header({ user, active = null }: Props) {
       <div className="grow" />
       <Link href="/prompts/new" className="btn btn-primary">
         <Plus weight="bold" size={14} />
-        New prompt
+        <span className={styles.newLabel}>New prompt</span>
       </Link>
+      <Suspense fallback={null}>
+        <OpenInNewTab className={`icon-btn ${styles.openOut}`} />
+      </Suspense>
       <AccountMenu user={user} />
     </header>
   );

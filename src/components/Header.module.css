@@ -56,6 +56,41 @@
   background: var(--bg-raised);
 }
 
+.openOut {
+  padding: 8px;
+  border-radius: var(--radius-pill);
+  color: var(--fg-muted);
+}
+.openOut:hover {
+  background: var(--bg-raised);
+  color: var(--fg);
+  text-decoration: none;
+}
+
+/* Compact header when embedded in an iframe (e.g. Notion). */
+html[data-embedded] .header {
+  padding: 12px 0;
+  gap: 12px;
+}
+html[data-embedded] .brandLabel {
+  display: none;
+}
+html[data-embedded] .logo {
+  height: 20px;
+}
+html[data-embedded] .nav {
+  margin-left: 0;
+}
+html[data-embedded] .navLink {
+  padding: 7px 12px;
+  font-size: 13px;
+}
+@media (max-width: 720px) {
+  html[data-embedded] .newLabel {
+    display: none;
+  }
+}
+
 @media (max-width: 560px) {
   .brandLabel {
     display: none;

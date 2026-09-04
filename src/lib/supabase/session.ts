@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { ALLOWED_EMAIL_DOMAIN } from "@/lib/constants";
+import { cookieOptions } from "./cookies";
 import { supabaseKey, supabaseUrl } from "./env";
 
 const PUBLIC_PATHS = ["/login", "/auth"];
@@ -17,6 +18,7 @@ export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(supabaseUrl(), supabaseKey(), {
+    cookieOptions,
     cookies: {
       getAll() {
         return request.cookies.getAll();

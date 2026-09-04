@@ -104,6 +104,20 @@ Schema is applied with `npx supabase db push` from this repo (already linked). E
 
 Then open the app and click "Continue with Google". Non-clay.com accounts are rejected by the database trigger even if Google lets them through.
 
+## Embedding in Notion
+
+Any page can be embedded: in Notion type `/embed`, paste the URL, and pick a tall block. Best results:
+
+- Whole library: `https://prompts.artificialchill.com/`
+- One prompt: `https://prompts.artificialchill.com/prompts/<id>` (copy the address from the prompt page)
+
+How it works, and what to expect:
+
+- The app sends `Content-Security-Policy: frame-ancestors` allowing Notion (`*.notion.so`, `*.notion.site`, `*.notion.com`) and itself. To allow another host, set `EMBED_FRAME_ANCESTORS` in Vercel to a space-separated list (or `*`) and redeploy.
+- Inside an iframe the header goes compact and gains an "open in a new tab" control.
+- Google will not run its sign-in flow inside an iframe, so the embedded login shows "Sign in with Google in a new tab". After signing in there, click "I've signed in, reload" in the embed.
+- The session cookie is `SameSite=None; Secure` so it is sent to the embed. Browsers that block third-party cookies (Safari by default, Chrome Incognito) will keep showing the sign-in screen inside Notion; those users should open the library in a tab. The Notion desktop app and Chrome with default settings work.
+
 ## Production setup from scratch
 
 ### 1. Supabase project

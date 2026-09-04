@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { signInWithGoogle } from "@/app/actions";
 import { ALLOWED_EMAIL_DOMAIN } from "@/lib/constants";
+import { EmbedSignIn } from "./EmbedSignIn";
 import styles from "./login.module.css";
 
 export const metadata: Metadata = { title: "Sign in" };
@@ -39,7 +40,7 @@ export default async function LoginPage({
               Fork it when you make it better.
             </p>
           </div>
-          <form action={signInWithGoogle} className={styles.actions}>
+          <form action={signInWithGoogle} className={`${styles.actions} embed-hide`}>
             <input type="hidden" name="next" value={next ?? "/"} />
             <button type="submit" className="btn btn-primary btn-xl">
               <GoogleMark />
@@ -53,6 +54,15 @@ export default async function LoginPage({
               <div className={styles.note}>Sign in with your @{ALLOWED_EMAIL_DOMAIN} account.</div>
             )}
           </form>
+          {/* Inside an iframe (Notion), Google won't run its sign-in flow, so it opens in a tab. */}
+          <div className={`${styles.actions} embed-only stack`}>
+            <EmbedSignIn next={next ?? "/"} googleMark={<GoogleMark />} />
+            {errorMessage ? (
+              <div className={styles.error} role="alert">
+                {errorMessage}
+              </div>
+            ) : null}
+          </div>
         </section>
 
         <section className={styles.features} aria-label="What you can do">

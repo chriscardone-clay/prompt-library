@@ -42,6 +42,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="en"
+      // data-embedded is added by the inline script below before hydration.
+      suppressHydrationWarning
       className={`${roobert.variable} ${roobertMono.variable} ${interTight.variable}`}
       style={{
         // Expose the Terra font tokens on the root so plain CSS can use them.
@@ -53,6 +55,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           "var(--font-roobert-mono), 'JetBrains Mono', ui-monospace, monospace",
       }}
     >
+      <head>
+        {/* Mark the document before first paint when it's embedded in an iframe
+            (e.g. a Notion page) so the compact layout renders without a flash. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{if(window.self!==window.top)document.documentElement.setAttribute('data-embedded','')}catch(e){document.documentElement.setAttribute('data-embedded','')}",
+          }}
+        />
+      </head>
       <body>
         <ToastProvider>{children}</ToastProvider>
       </body>

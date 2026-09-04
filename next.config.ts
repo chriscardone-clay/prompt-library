@@ -1,5 +1,22 @@
 import type { NextConfig } from "next";
 
+/**
+ * Sites allowed to embed this app in an iframe (Notion by default). Override
+ * with a space-separated list in EMBED_FRAME_ANCESTORS, e.g.
+ *   EMBED_FRAME_ANCESTORS="https://*.notion.so https://*.notion.site https://intranet.example.com"
+ * Use "*" to allow any site.
+ */
+const FRAME_ANCESTORS =
+  process.env.EMBED_FRAME_ANCESTORS?.trim() ||
+  [
+    "'self'",
+    "https://*.notion.so",
+    "https://notion.so",
+    "https://*.notion.site",
+    "https://*.notion.com",
+    "https://notion.com",
+  ].join(" ");
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
@@ -12,7 +29,8 @@ const nextConfig: NextConfig = {
       {
         source: "/(.*)",
         headers: [
-          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          // Embedding: no X-Frame-Options (it can't express an allow-list); CSP does the job.
+          { key: "Content-Security-Policy", value: `frame-ancestors ${FRAME_ANCESTORS}` },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         ],
