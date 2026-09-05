@@ -1,15 +1,15 @@
 import { Files, GitFork, LockSimple } from "@phosphor-icons/react/dist/ssr";
-import { FALLBACK_TONE } from "@/lib/catalog";
+import { FALLBACK_TONE, type Tone, toneStyle } from "@/lib/catalog";
 import type { PromptApp } from "@/lib/types";
 
 export function appLabel(a: PromptApp): string {
   return a.surfaces.length ? `${a.app} · ${a.surfaces.join(", ")}` : a.app;
 }
 
-/** App tag in the app's catalog colours (100 tint background, 400 ink). */
-export function AppTag({ app, tone = FALLBACK_TONE }: { app: PromptApp; tone?: { bg: string; fg: string } }) {
+/** App tag in the app's catalog colours (100 tint background, 400 ink; derived in dark mode). */
+export function AppTag({ app, tone = FALLBACK_TONE }: { app: PromptApp; tone?: Tone }) {
   return (
-    <span className="tag" style={{ background: tone.bg, color: tone.fg }}>
+    <span className="tag tone" style={toneStyle(tone)}>
       {appLabel(app)}
     </span>
   );

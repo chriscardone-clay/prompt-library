@@ -35,7 +35,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#FEFDFB",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#FEFDFB" },
+    { media: "(prefers-color-scheme: dark)", color: "#141311" },
+  ],
   width: "device-width",
   initialScale: 1,
 };
@@ -58,12 +61,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       }}
     >
       <head>
-        {/* Mark the document before first paint when it's embedded in an iframe
-            (e.g. a Notion page) so the compact layout renders without a flash. */}
+        {/* Before first paint: mark the document when it's embedded in an iframe
+            (e.g. a Notion page) so the compact layout renders without a flash,
+            and resolve the appearance preference (localStorage "theme": light |
+            dark | system) to data-theme so dark mode doesn't flash light. */}
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "try{if(window.self!==window.top)document.documentElement.setAttribute('data-embedded','')}catch(e){document.documentElement.setAttribute('data-embedded','')}",
+              "try{if(window.self!==window.top)document.documentElement.setAttribute('data-embedded','')}catch(e){document.documentElement.setAttribute('data-embedded','')}" +
+              "try{var t=localStorage.getItem('theme');var d=t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light')}catch(e){}",
           }}
         />
       </head>

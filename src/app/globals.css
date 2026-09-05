@@ -28,15 +28,27 @@
   --slushie-400: #008bad;
   --pom-100: #fff1f2;
   --pom-400: #c22e3d;
+  --lime-400: #3e5a05; /* success text on light surfaces (≥ 6:1) */
 
   /* Semantic */
   --bg: var(--oat-100);
   --bg-raised: var(--oat-200);
   --bg-hover: #efede9;
   --fg: var(--oat-500);
-  --fg-muted: var(--oat-400);
+  /* One step darker than oat-400 so muted text clears 4.5:1 on every light
+     surface (oat-400 #7b7974 sits at 3.9:1 on the raised slab). */
+  --fg-muted: #66645f;
+  --fg-placeholder: #85827b;
   --border: var(--warm-line-2);
   --border-strong: var(--oat-300);
+
+  /* Destructive */
+  --danger-bg: #fdecec;
+  --danger-fg: #b42318;
+  --danger-ink: #7a1f1f;
+  --danger-btn: #b42318;
+  --on-danger: #ffffff;
+  --danger-keep-hover: rgba(255, 255, 255, 0.6);
 
   --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-md: 0 8px 20px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.04);
@@ -51,6 +63,76 @@
 
   --ease: cubic-bezier(0.2, 0, 0, 1);
   color-scheme: light;
+}
+
+/* ── Dark theme ──────────────────────────────────────────────────────
+   Set by the inline script in layout.tsx (localStorage "theme", or the OS
+   preference). The oat scale flips end-for-end so every raw token keeps its
+   role: oat-100 stays "the surface", oat-500 stays "the ink". Accent pairs
+   (X-100/200 background + X-400/500 text) swap to a deep tint + light ink.
+   All text/background pairs here are ≥ 4.5:1 (WCAG AA); body text is ≥ 12:1. */
+:root[data-theme="dark"] {
+  --oat-100: #1d1c19;
+  --oat-200: #262521;
+  --oat-300: #4d4b45;
+  --oat-400: #a6a29a;
+  --oat-500: #f3f1ec;
+  --white: #201f1c;
+  --grey-line: #33312c;
+  --grey-line-2: #2b2a26;
+  --warm-line: #35332e;
+  --warm-line-2: #2c2b27;
+
+  --lemon-200: #3f3106;
+  --lemon-500: #fbe189;
+  --lime-300: #24400a;
+  --lime-400: #b8c93a;
+  --lime-500: #d6e232;
+  --slushie-100: #0d2b34;
+  --slushie-400: #62cbe9;
+  --pom-100: #3b171b;
+  --pom-400: #ff8f98;
+
+  --bg: #141311;
+  --bg-hover: #2f2e29;
+  --fg-muted: var(--oat-400);
+  --fg-placeholder: #8b877f;
+
+  --danger-bg: #3b1513;
+  --danger-fg: #ff9d94;
+  --danger-ink: #ffb4ad;
+  --danger-btn: #d9362a;
+  --danger-keep-hover: rgba(255, 255, 255, 0.08);
+
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 8px 20px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
+}
+
+/* Theme-specific artwork (e.g. the black vs white wordmark). */
+:root[data-theme="dark"] .theme-light-only {
+  display: none !important;
+}
+:root:not([data-theme="dark"]) .theme-dark-only {
+  display: none !important;
+}
+
+/* ── Catalog tones ───────────────────────────────────────────────────
+   Apps carry a light tint (--tone-bg) and a dark ink (--tone-fg) chosen for
+   light mode. In dark mode both are derived from the ink so the pair keeps
+   its hue and its contrast: a deep tint of the ink for the surface, and the
+   ink lifted towards white for text. */
+.tone {
+  --tone-surface: var(--tone-bg);
+  --tone-ink: var(--tone-fg);
+}
+:root[data-theme="dark"] .tone {
+  --tone-surface: color-mix(in oklab, var(--tone-fg) 22%, var(--bg));
+  --tone-ink: color-mix(in oklab, var(--tone-fg) 40%, white);
+}
+.tag.tone {
+  background: var(--tone-surface);
+  color: var(--tone-ink);
 }
 
 *,
@@ -275,9 +357,9 @@ textarea:focus {
   background: var(--fg);
 }
 .chip[data-tone][aria-pressed="true"] {
-  background: var(--chip-bg);
-  border-color: var(--chip-bg);
-  color: var(--chip-fg);
+  background: var(--tone-surface);
+  border-color: var(--tone-surface);
+  color: var(--tone-ink);
 }
 
 /* ── Buttons ─────────────────────────────────────────────────────── */
@@ -366,7 +448,7 @@ textarea:focus {
 }
 .input::placeholder,
 .textarea::placeholder {
-  color: #a3a19c;
+  color: var(--fg-placeholder);
 }
 .textarea {
   width: 100%;

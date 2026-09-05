@@ -15,7 +15,7 @@ import {
   saveTeam,
 } from "@/app/admin/actions";
 import type { ActionResult } from "@/app/actions";
-import type { Catalog, CatalogApp, CatalogSurface, CatalogTeam } from "@/lib/catalog";
+import { FALLBACK_TONE, toneStyle, type Catalog, type CatalogApp, type CatalogSurface, type CatalogTeam } from "@/lib/catalog";
 import { ALLOWED_EMAIL_DOMAIN } from "@/lib/constants";
 import { useToast } from "./Toast";
 import styles from "./AdminPanel.module.css";
@@ -76,7 +76,7 @@ export function AdminPanel({ catalog, usage, admins, meEmail }: Props) {
       <div className={styles.block}>
         <div className={styles.blockHead}>
           <h2 className="section-title">Apps</h2>
-          <span className="tiny muted">Tag colours are the 100 tint for the background and the 400 shade for text.</span>
+          <span className="tiny muted">Pick colours for light mode: a 100 tint for the background and a 400 shade for text (aim for 4.5:1 contrast). Dark mode derives its own pair from the text colour.</span>
         </div>
         <div className={styles.list}>
           {catalog.apps.map((app, i) => (
@@ -208,7 +208,7 @@ function AppRow({
   return (
     <div className={`${styles.card} ${app.archived ? styles.archived : ""}`}>
       <div className={styles.cardRow}>
-        <span className="tag" style={{ background: validHex ? draft.bg : app.bg, color: validHex ? draft.fg : app.fg }}>
+        <span className="tag tone" style={toneStyle(validHex ? draft : app)}>
           {draft.name || "App"}
         </span>
         <input
@@ -398,7 +398,7 @@ function NewApp({ pending, onAdd }: { pending: boolean; onAdd: (input: { name: s
   return (
     <div className={styles.card}>
       <div className={styles.cardRow}>
-        <span className="tag" style={{ background: validHex ? draft.bg : "#F4F3F0", color: validHex ? draft.fg : "#1B1A18" }}>
+        <span className="tag tone" style={toneStyle(validHex ? draft : FALLBACK_TONE)}>
           {draft.name || "New app"}
         </span>
         <input

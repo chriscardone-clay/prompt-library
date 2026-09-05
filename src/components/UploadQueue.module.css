@@ -99,7 +99,7 @@
   white-space: nowrap;
 }
 .row[data-status="done"] .status {
-  color: var(--lime-400, #808000);
+  color: var(--lime-400);
 }
 
 .miniBar {

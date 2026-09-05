@@ -199,7 +199,7 @@
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  border: 2px solid rgba(254, 253, 251, 0.35);
+  border: 2px solid color-mix(in srgb, var(--oat-100) 35%, transparent);
   border-top-color: var(--oat-100);
   animation: btnSpin 800ms linear infinite;
 }

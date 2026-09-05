@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   activeApps,
   activeTeams,
+  toneStyle,
   appTone,
   isKnownApp,
   isKnownTeam,
@@ -285,8 +286,8 @@ export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
               <button
                 key={c.key}
                 type="button"
-                className={styles.activeChip}
-                style={{ background: c.bg, color: c.fg }}
+                className={`${styles.activeChip} tone`}
+                style={toneStyle(c)}
                 onClick={c.remove}
                 aria-label={`Remove filter ${c.label}`}
               >
@@ -327,7 +328,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
                   const surfList = surfacesOf(catalog, app);
                   const want = surfaces[app] ?? [];
                   return (
-                    <div key={app} className={styles.optionBlock}>
+                    <div key={app} className={`${styles.optionBlock} tone`} style={toneStyle(tone)}>
                       <button
                         type="button"
                         className={styles.option}
@@ -336,14 +337,14 @@ export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
                         onClick={() => toggleApp(app)}
                       >
                         {on ? (
-                          <CheckSquare weight="fill" size={18} style={{ color: tone.fg }} />
+                          <CheckSquare weight="fill" size={18} style={{ color: "var(--tone-ink)" }} />
                         ) : (
-                          <Square size={18} style={{ color: tone.fg }} />
+                          <Square size={18} style={{ color: "var(--tone-ink)" }} />
                         )}
                         <span className="grow">{app}</span>
                       </button>
                       {on && surfList.length ? (
-                        <div className={styles.surfaces} style={{ borderColor: tone.bg }}>
+                        <div className={styles.surfaces} style={{ borderColor: "var(--tone-surface)" }}>
                           <span className={styles.surfaceHint}>
                             {want.length ? `${want.length} of ${surfList.length}` : "Any surface"}
                           </span>
@@ -359,9 +360,9 @@ export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
                                 onClick={() => toggleSurface(app, sf)}
                               >
                                 {sOn ? (
-                                  <CheckSquare weight="fill" size={16} style={{ color: tone.fg }} />
+                                  <CheckSquare weight="fill" size={16} style={{ color: "var(--tone-ink)" }} />
                                 ) : (
-                                  <Square size={16} style={{ color: tone.fg }} />
+                                  <Square size={16} style={{ color: "var(--tone-ink)" }} />
                                 )}
                                 {sf}
                               </button>

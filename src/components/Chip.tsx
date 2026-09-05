@@ -1,10 +1,12 @@
 "use client";
 
+import { type Tone, toneStyle } from "@/lib/catalog";
+
 interface Props {
   label: string;
   selected: boolean;
   onClick: () => void;
-  tone?: { bg: string; fg: string } | null;
+  tone?: Tone | null;
   size?: "md" | "lg";
 }
 
@@ -13,15 +15,11 @@ export function Chip({ label, selected, onClick, tone, size = "md" }: Props) {
   return (
     <button
       type="button"
-      className={`chip${size === "lg" ? " chip-lg" : ""}`}
+      className={`chip${size === "lg" ? " chip-lg" : ""}${tone ? " tone" : ""}`}
       aria-pressed={selected}
       data-tone={tone ? "" : undefined}
       onClick={onClick}
-      style={
-        tone
-          ? ({ "--chip-bg": tone.bg, "--chip-fg": tone.fg } as React.CSSProperties)
-          : undefined
-      }
+      style={tone ? (toneStyle(tone) as React.CSSProperties) : undefined}
     >
       {label}
     </button>

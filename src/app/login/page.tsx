@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { signInWithGoogle } from "@/app/actions";
+import { ClayLogo } from "@/components/ClayLogo";
 import { ALLOWED_EMAIL_DOMAIN } from "@/lib/constants";
 import { EmbedSignIn } from "./EmbedSignIn";
 import styles from "./login.module.css";
@@ -30,8 +31,7 @@ export default async function LoginPage({
     <main className={styles.page}>
       <div className={styles.grid}>
         <section className={styles.hero}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/Clay_Logo_3D_Blk.png" alt="Clay" className={styles.logo} />
+          <ClayLogo className={styles.logo} />
           <div className={styles.copy}>
             <div className="eyebrow-lg">Prompt library</div>
             <h1 className="display-xl">Good prompts, shared once. Used everywhere.</h1>

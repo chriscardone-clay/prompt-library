@@ -15,16 +15,16 @@
   transition: background 120ms var(--ease), color 120ms var(--ease), border-color 120ms var(--ease);
 }
 .trash:hover {
-  background: #fdecec;
-  color: #b42318;
-  border-color: #fdecec;
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+  border-color: var(--danger-bg);
 }
 
 .confirm {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: #fdecec;
+  background: var(--danger-bg);
   border-radius: var(--radius-pill);
   padding: 4px 4px 4px 14px;
   animation: confirmIn 160ms var(--ease);
@@ -43,13 +43,13 @@
 .question {
   font-size: 13px;
   font-weight: 500;
-  color: #7a1f1f;
+  color: var(--danger-ink);
   white-space: nowrap;
 }
 
 .delete {
-  background: #b42318;
-  color: var(--oat-100);
+  background: var(--danger-btn);
+  color: var(--on-danger);
   border: 0;
   border-radius: var(--radius-pill);
   padding: 7px 14px;
@@ -66,7 +66,7 @@
 
 .keep {
   background: transparent;
-  color: #7a1f1f;
+  color: var(--danger-ink);
   border: 0;
   border-radius: var(--radius-pill);
   padding: 7px 10px;
@@ -74,5 +74,5 @@
   font-weight: 500;
 }
 .keep:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--danger-keep-hover);
 }

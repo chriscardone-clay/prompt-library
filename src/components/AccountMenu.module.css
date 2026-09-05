@@ -48,6 +48,48 @@
   margin: 4px 0;
 }
 
+/* Appearance picker */
+.sectionLabel {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  padding: 6px 12px 6px;
+}
+.seg {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  margin: 0 4px 4px;
+  background: var(--bg-raised);
+  border-radius: 10px;
+}
+.segBtn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  transition: background 120ms var(--ease), color 120ms var(--ease);
+}
+.segBtn:hover {
+  color: var(--fg);
+}
+.segBtn[aria-pressed="true"] {
+  background: var(--white);
+  color: var(--fg);
+  box-shadow: var(--shadow-sm);
+}
+
 .item {
   display: flex;
   align-items: center;

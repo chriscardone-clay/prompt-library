@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ClayLogo } from "@/components/ClayLogo";
 
 export const EMBED_MESSAGE_TYPE = "clay-prompt-library:oauth-code";
 
@@ -60,8 +61,7 @@ export default function EmbedDonePage() {
           maxWidth: 440,
         }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/brand/Clay_Logo_3D_Blk.png" alt="Clay" style={{ height: 24, width: "auto" }} />
+        <ClayLogo style={{ height: 24, width: "auto" }} />
         {state === "working" || state === "handed" ? (
           <>
             <div className="display-sm">Signed in</div>

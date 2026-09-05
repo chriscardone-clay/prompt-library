@@ -123,6 +123,8 @@
   gap: 8px;
   border-radius: var(--radius-md);
   padding: 10px 12px;
+  background: var(--tone-surface);
+  color: var(--tone-ink);
 }
 .surfaceHead {
   display: flex;
@@ -148,14 +150,14 @@
   line-height: 1;
   padding: 7px 10px 6px;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--pill-fg);
+  border: 1px solid var(--tone-ink);
   background: transparent;
-  color: var(--pill-fg);
+  color: var(--tone-ink);
   white-space: nowrap;
   transition: background 120ms var(--ease), color 120ms var(--ease);
 }
 .surfacePill[aria-pressed="true"] {
-  background: var(--pill-fg);
+  background: var(--tone-ink);
   color: var(--oat-100);
 }
 

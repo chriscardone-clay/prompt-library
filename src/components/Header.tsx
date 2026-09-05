@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import type { Profile } from "@/lib/types";
 import { AccountMenu } from "./AccountMenu";
+import { ClayLogo } from "./ClayLogo";
 import { OpenInNewTab } from "./OpenInNewTab";
 import styles from "./Header.module.css";
 
@@ -15,8 +16,7 @@ export function Header({ user, active = null }: Props) {
   return (
     <header className={styles.header}>
       <Link href="/" className={styles.brand}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/brand/Clay_Logo_3D_Blk.png" alt="Clay" className={styles.logo} />
+        <ClayLogo className={styles.logo} />
         <span className={styles.brandLabel}>Prompt library</span>
       </Link>
       <nav className={styles.nav} aria-label="Primary">

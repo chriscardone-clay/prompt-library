@@ -17,7 +17,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPrompt, updatePrompt } from "@/app/actions";
-import { activeApps, activeTeams, appTone, surfacesOf, type Catalog } from "@/lib/catalog";
+import { activeApps, activeTeams, appTone, surfacesOf, toneStyle, type Catalog } from "@/lib/catalog";
 import {
   ALLOWED_EMAIL_DOMAIN,
   MAX_SKILL_BYTES,
@@ -648,15 +648,14 @@ export function PromptEditor({
                           className={styles.surfacePill}
                           aria-pressed={on}
                           onClick={onClick}
-                          style={{ ["--pill-fg" as string]: tone.fg }}
                         >
                           {label}
                         </button>
                       );
                       return (
-                        <div key={x.app} className={styles.surfaceGroup} style={{ background: tone.bg, color: tone.fg }}>
+                        <div key={x.app} className={`${styles.surfaceGroup} tone`} style={toneStyle(tone)}>
                           <div className={styles.surfaceHead}>
-                            <span className="eyebrow" style={{ color: tone.fg }}>
+                            <span className="eyebrow" style={{ color: "var(--tone-ink)" }}>
                               {x.app}
                             </span>
                             <span className={styles.surfaceHint}>

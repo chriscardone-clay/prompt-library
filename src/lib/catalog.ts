@@ -38,6 +38,21 @@ export const EMPTY_CATALOG: Catalog = { apps: [], teams: [] };
 /** Oat-200 slab + ink: what an unknown or archived-and-removed app falls back to. */
 export const FALLBACK_TONE = { bg: "#F4F3F0", fg: "#1B1A18" };
 
+export interface Tone {
+  bg: string;
+  fg: string;
+}
+
+/**
+ * Inline style carrying an app's colours as CSS variables. Pair it with the
+ * global `tone` class: light mode uses the pair as-is, dark mode derives a
+ * matching pair from the ink (see globals.css), so components should read
+ * `var(--tone-surface)` / `var(--tone-ink)` rather than the raw values.
+ */
+export function toneStyle(tone: Tone, extra?: Record<string, string | number>): Record<string, string | number> {
+  return { "--tone-bg": tone.bg, "--tone-fg": tone.fg, ...extra };
+}
+
 export function findApp(catalog: Catalog, name: string): CatalogApp | undefined {
   return catalog.apps.find((a) => a.name === name);
 }
