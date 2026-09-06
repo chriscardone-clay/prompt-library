@@ -55,20 +55,24 @@ export async function buildHomeBlocks(client: SupabaseClient, email: string | nu
   const newest = [...items].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 5);
 
   let favorites: Item[] = [];
-  let personName: string | null = null;
   if (email) {
-    const { data: prof } = await client.from("profiles").select("id, name").eq("email", email).maybeSingle();
-    const profile = prof as { id: string; name: string } | null;
+    const { data: prof } = await client.from("profiles").select("id").eq("email", email).maybeSingle();
+    const profile = prof as { id: string } | null;
     if (profile) {
-      personName = profile.name;
       const { data: favs } = await client.from("prompt_favorites").select("prompt_id").eq("user_id", profile.id).order("created_at", { ascending: false }).limit(6);
       const ids = new Set(((favs ?? []) as { prompt_id: string }[]).map((f) => f.prompt_id));
       favorites = items.filter((i) => ids.has(i.id));
     }
   }
 
+  // Slack gives us little control over vertical rhythm, so each group gets its own
+  // header block, one section per item, and a blank context line as a spacer.
+  const spacer = { type: "context", elements: [{ type: "mrkdwn", text: " " }] };
+  const heading = (text: string) => ({ type: "header", text: { type: "plain_text", text, emoji: true } });
+  const item = (it: Item, extra?: string) => ({ type: "section", text: { type: "mrkdwn", text: line(site, it, extra).replace(/^• /, "") } });
+
   const blocks: Record<string, unknown>[] = [
-    { type: "header", text: { type: "plain_text", text: `📚 Clay Prompt Library${personName ? ` · hi ${personName.split(" ")[0]}` : ""}`, emoji: true } },
+    heading("📚 Clay Prompt Library"),
     {
       type: "context",
       elements: [
@@ -78,53 +82,42 @@ export async function buildHomeBlocks(client: SupabaseClient, email: string | nu
         },
       ],
     },
-    { type: "divider" },
+    spacer,
     {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*Ask me for a prompt or skill*\nOpen the *Messages* tab (or the assistant pane) and describe the task. Try: _${SUGGESTED_PROMPTS.slice(0, 2)
+        text: `*Ask me for a prompt or skill*\nOpen the *Chat* tab and describe the task. Try: _${SUGGESTED_PROMPTS.slice(0, 2)
           .map((p) => `“${p.message}”`)
           .join("_ or _")}_`,
       },
     },
+    spacer,
   ];
 
   if (top.length) {
-    blocks.push({ type: "divider" });
-    blocks.push({
-      type: "section",
-      text: { type: "mrkdwn", text: `*Most upvoted*\n${top.map((it) => line(site, it, `▲ ${it.prompt_upvotes?.length ?? 0}`)).join("\n")}` },
-    });
+    blocks.push({ type: "divider" }, heading("Most upvoted"));
+    for (const it of top) blocks.push(item(it, `▲ ${it.prompt_upvotes?.length ?? 0}`));
+    blocks.push(spacer);
   }
   if (favorites.length) {
-    blocks.push({ type: "divider" });
-    blocks.push({
-      type: "section",
-      text: { type: "mrkdwn", text: `*Your favorites*\n${favorites.map((it) => line(site, it)).join("\n")}` },
-      accessory: { type: "button", text: { type: "plain_text", text: "All favorites" }, url: `${site}/favorites`, action_id: "open_favorites" },
-    });
+    blocks.push({ type: "divider" }, heading("Your favorites"));
+    for (const it of favorites) blocks.push(item(it));
+    blocks.push({ type: "actions", elements: [{ type: "button", text: { type: "plain_text", text: "All favorites" }, url: `${site}/favorites`, action_id: "open_favorites" }] });
+    blocks.push(spacer);
   }
   if (newest.length) {
-    blocks.push({ type: "divider" });
-    blocks.push({
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: `*Newest*\n${newest
-          .map((it) => line(site, it, it.owner?.name ? esc(it.owner.name) : undefined))
-          .join("\n")}`,
-      },
-      accessory: { type: "button", text: { type: "plain_text", text: "Browse newest" }, url: `${site}/?sort=new`, action_id: "open_newest" },
-    });
-    // Slightly clipped descriptions for the very newest one, as a teaser.
+    blocks.push({ type: "divider" }, heading("Newest"));
+    for (const it of newest) blocks.push(item(it, it.owner?.name ? esc(it.owner.name) : undefined));
     const teaser = newest[0];
     if (teaser?.description) {
       blocks.push({ type: "context", elements: [{ type: "mrkdwn", text: `Latest: *${esc(teaser.title)}* — ${esc(clip(teaser.description, 140))}` }] });
     }
+    blocks.push({ type: "actions", elements: [{ type: "button", text: { type: "plain_text", text: "Browse newest" }, url: `${site}/?sort=new`, action_id: "open_newest" }] });
+    blocks.push(spacer);
   }
 
-  blocks.push({ type: "divider" });
+  blocks.push({ type: "divider" }, spacer);
   blocks.push({
     type: "actions",
     elements: [
