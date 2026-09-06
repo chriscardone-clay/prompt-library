@@ -78,6 +78,39 @@ export async function isChannelMember(channel: string, userId: string): Promise<
   return null;
 }
 
+/** Email behind a Slack user id (needs users:read.email); null if unknown. */
+export async function lookupSlackUserEmail(userId: string): Promise<string | null> {
+  const r = await slackApi<{ user?: { profile?: { email?: string } } }>("users.info", undefined, { user: userId });
+  return r.ok ? r.user?.profile?.email?.toLowerCase() ?? null : null;
+}
+
+// ── Agents & AI Apps (assistant pane) — all need the assistant:write scope ──
+export async function assistantSetStatus(channel: string, threadTs: string, status: string): Promise<void> {
+  await slackApi("assistant.threads.setStatus", { channel_id: channel, thread_ts: threadTs, status });
+}
+export async function assistantSetTitle(channel: string, threadTs: string, title: string): Promise<void> {
+  await slackApi("assistant.threads.setTitle", { channel_id: channel, thread_ts: threadTs, title: title.slice(0, 250) });
+}
+export async function assistantSetSuggestedPrompts(
+  channel: string,
+  threadTs: string,
+  prompts: { title: string; message: string }[],
+  title?: string,
+): Promise<void> {
+  await slackApi("assistant.threads.setSuggestedPrompts", {
+    channel_id: channel,
+    thread_ts: threadTs,
+    prompts: prompts.slice(0, 4),
+    ...(title ? { title } : {}),
+  });
+}
+
+/** Publish the App Home tab for one person (event app_home_opened). */
+export async function publishHomeView(userId: string, blocks: Record<string, unknown>[]): Promise<{ ok: boolean; error?: string }> {
+  const r = await slackApi("views.publish", { user_id: userId, view: { type: "home", blocks: blocks.slice(0, 100) } });
+  return r.ok ? { ok: true } : { ok: false, error: r.error };
+}
+
 /** Display name for a Slack user id (for the model's benefit); null if unknown. */
 export async function lookupSlackUserName(userId: string): Promise<string | null> {
   const r = await slackApi<{ user?: { real_name?: string; profile?: { display_name?: string; real_name?: string } } }>("users.info", undefined, { user: userId });
