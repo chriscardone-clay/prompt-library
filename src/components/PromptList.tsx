@@ -16,6 +16,7 @@ import {
 } from "@/lib/catalog";
 import { isSort, SORT_LABELS, SORTS, type Kind, type Sort } from "@/lib/constants";
 import { ago, plural } from "@/lib/format";
+import { searchPrompts } from "@/lib/search";
 import type { Profile, Prompt } from "@/lib/types";
 import { Avatar } from "./Avatar";
 import { FavoriteButton } from "./FavoriteButton";
@@ -168,16 +169,20 @@ export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
       );
     }
     if (teams.length) out = out.filter((p) => p.audiences.some((a) => teams.includes(a)));
+    // Ranked search over title, description, notes/apps/teams and the prompt text
+    // (SKILL.md for skills). While searching, relevance orders the list.
+    const relevance = new Map<string, number>();
     if (needle) {
-      out = out.filter((p) =>
-        [p.title, p.description, p.body, ...p.files.map((f) => `${f.name} ${f.content}`)]
-          .join(" ")
-          .toLowerCase()
-          .includes(needle),
-      );
+      const hits = searchPrompts(out, needle, catalog.apps.map((a) => a.name));
+      for (const h of hits) relevance.set(h.id, h.score);
+      out = out.filter((p) => relevance.has(p.id));
     }
     const t = (s: string) => new Date(s).getTime();
     return [...out].sort((a, b) => {
+      if (needle) {
+        const d = (relevance.get(b.id) ?? 0) - (relevance.get(a.id) ?? 0);
+        if (Math.abs(d) > 1e-6) return d;
+      }
       if (sort === "top") {
         return b.upvoteUserIds.length - a.upvoteUserIds.length || t(b.updatedAt) - t(a.updatedAt);
       }
@@ -185,7 +190,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
       return t(b.updatedAt) - t(a.updatedAt);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prompts, kind, q, params.get("apps"), params.get("surfaces"), params.get("teams"), sort]);
+  }, [prompts, kind, q, params.get("apps"), params.get("surfaces"), params.get("teams"), sort, catalog]);
 
   const title =
     view === "mine"
