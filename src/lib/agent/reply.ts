@@ -6,16 +6,18 @@ import type { AnswerResult } from "./answer";
 export function buildReplyMessage(question: string, result: AnswerResult, siteUrl: string): SlackMessage {
   const site = siteUrl.replace(/\/$/, "");
   const blocks: Record<string, unknown>[] = [];
-  const whyById = new Map(result.answer.matches.map((m) => [m.id, m.why]));
 
   blocks.push({ type: "section", text: { type: "mrkdwn", text: result.answer.reply.trim() } });
+
+  // A clarification is just the question back; no cards, no nudges.
+  if (result.answer.clarify) return { blocks, text: result.answer.reply };
 
   for (const c of result.matches) {
     const url = `${site}/prompts/${c.id}`;
     const kind = c.kind === "skill" ? "Skill" : "Prompt";
     const bits = [kind, c.apps.length ? esc(c.apps.join(", ")) : null].filter(Boolean).join(" · ");
-    const why = whyById.get(c.id);
-    const lines = [`*<${url}|${esc(c.title)}>* · ${bits}`, c.description ? esc(clip(c.description, 160)) : "", why && why !== "Keyword match" ? `_${esc(why)}_` : ""].filter(Boolean);
+    const why = result.why.get(c.id);
+    const lines = [`*<${url}|${esc(c.title)}>* · ${bits}`, c.description ? esc(clip(c.description, 160)) : "", why ? `_${esc(why)}_` : ""].filter(Boolean);
     blocks.push({
       type: "section",
       text: { type: "mrkdwn", text: lines.join("\n") },

@@ -1,6 +1,7 @@
 import { after, NextResponse, type NextRequest } from "next/server";
+import type { ThreadContext } from "@/lib/agent/answer";
 import { handleAsk, stripMentions } from "@/lib/agent/handle";
-import { lookupSlackUserName, postSlackMessage, slackEventsConfigured, verifySlackRequest } from "@/lib/slack";
+import { fetchThread, lookupSlackUserName, postSlackMessage, slackEventsConfigured, verifySlackRequest } from "@/lib/slack";
 import { createServiceClient } from "@/lib/supabase/service";
 
 export const dynamic = "force-dynamic";
@@ -75,12 +76,34 @@ export async function POST(request: NextRequest) {
   const user = ev.user;
   const eventId = body.event_id;
 
+  // Mentioned inside an existing thread? Then the earlier messages matter.
+  const inThread = !!ev.thread_ts && ev.thread_ts !== ev.ts;
+  const mentionTs = ev.ts;
+
   after(async () => {
     try {
-      const askerName = (await lookupSlackUserName(user)) ?? undefined;
+      const [askerName, thread] = await Promise.all([
+        lookupSlackUserName(user).then((n) => n ?? undefined),
+        inThread && ev.thread_ts ? fetchThread(channel, ev.thread_ts) : Promise.resolve(null),
+      ]);
+      let threadContext: ThreadContext | undefined;
+      if (inThread) {
+        if (thread && thread.length) {
+          const [root, ...rest] = thread;
+          threadContext = {
+            root: stripMentions(root.text),
+            others: rest.filter((m) => m.ts !== mentionTs && !m.bot && m.text.trim()).map((m) => stripMentions(m.text)),
+          };
+        } else {
+          // Can't read the thread (missing channels:history / groups:history?) — treat it as a long thread we can't parse.
+          console.warn("[agent] thread unreadable; asking to restate", { channel, threadTs: ev.thread_ts });
+          threadContext = { root: "", others: Array(99).fill("") };
+        }
+      }
       const handled = await handleAsk(service, {
         source: isMention ? "mention" : "dm",
         question,
+        thread: threadContext,
         askerName,
         eventId,
         slackUser: user,
@@ -89,7 +112,7 @@ export async function POST(request: NextRequest) {
       });
       const posted = await postSlackMessage(channel, handled.message, threadTs);
       if (!posted.ok) console.error("[agent] reply failed", posted.error, { channel, eventId });
-      else console.log("[agent] replied", { channel, eventId, matches: handled.result.matches.length, fallback: handled.result.fallback });
+      else console.log("[agent] replied", { channel, eventId, matches: handled.result.matches.length, fallback: handled.result.fallback, clarified: handled.clarified, inThread });
     } catch (err) {
       console.error("[agent] handling failed", err instanceof Error ? err.message : err, { channel, eventId });
       await postSlackMessage(

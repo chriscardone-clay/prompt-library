@@ -52,7 +52,7 @@
   gap: 6px;
   flex-wrap: wrap;
 }
-.examples .chip {
+.examples :global(.chip) {
   text-transform: none;
   letter-spacing: 0;
   font-family: var(--font-body);

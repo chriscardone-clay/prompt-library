@@ -21,6 +21,8 @@ const EXAMPLES = [
 
 export function AssistantPanel({ eventsReady, slackReady, model, recent }: Props) {
   const [q, setQ] = useState("");
+  const [thread, setThread] = useState("");
+  const [showThread, setShowThread] = useState(false);
   const [result, setResult] = useState<AskResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -31,7 +33,7 @@ export function AssistantPanel({ eventsReady, slackReady, model, recent }: Props
     setQ(text);
     setError(null);
     start(async () => {
-      const res = await askAssistant(text);
+      const res = await askAssistant(text, showThread ? thread : undefined);
       if (res.ok) setResult(res.data);
       else {
         setResult(null);
@@ -74,14 +76,37 @@ export function AssistantPanel({ eventsReady, slackReady, model, recent }: Props
             {ex}
           </button>
         ))}
+        <button type="button" className="chip" aria-pressed={showThread} onClick={() => setShowThread((v) => !v)}>
+          {showThread ? "Hide thread context" : "Simulate a thread…"}
+        </button>
       </div>
+      {showThread ? (
+        <label className="field">
+          <span className="eyebrow">Thread messages before the mention (one per line; first line started the thread)</span>
+          <textarea
+            className="textarea"
+            rows={3}
+            value={thread}
+            onChange={(e) => setThread(e.target.value)}
+            placeholder={"Does anyone have a good skill for doing account audits?\nI think Chris made one?"}
+          />
+          <span className="tiny muted">Then ask something short like “what do you have?” to see how the bot uses the thread.</span>
+        </label>
+      ) : null}
 
       {error ? <div className={styles.warn}>{error}</div> : null}
       {result ? (
         <div className={styles.result}>
           <div className={`tiny muted ${styles.meta}`}>
-            {result.candidates} items considered{result.shortlisted ? " (shortlisted by search)" : ""} · {result.matches} match{result.matches === 1 ? "" : "es"} ·{" "}
-            {result.fallback ? <b>keyword fallback (model unavailable{result.error ? `: ${result.error.slice(0, 120)}` : ""})</b> : `answered by ${result.model}`}
+            {result.clarified ? (
+              <b>asked the person to restate the request</b>
+            ) : (
+              <>
+                {result.candidates} items considered{result.shortlisted ? " (shortlisted by search)" : ""} · {result.matches} match{result.matches === 1 ? "" : "es"} ·{" "}
+                {result.fallback ? <b>search fallback (model unavailable{result.error ? `: ${result.error.slice(0, 100)}` : ""})</b> : `answered by ${result.model}`}
+                {result.effectiveQuestion !== q ? <> · searched: “{result.effectiveQuestion.slice(0, 120)}”</> : null}
+              </>
+            )}
           </div>
           <SlackPreview blocks={result.blocks} />
         </div>

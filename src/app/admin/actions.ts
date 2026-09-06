@@ -293,17 +293,22 @@ export interface AskResult {
   model: string;
   fallback: boolean;
   error?: string;
+  effectiveQuestion: string;
+  clarified: boolean;
 }
 
 /** Run the assistant exactly as Slack would, but return the reply here instead of posting it. */
-export async function askAssistant(question: string): Promise<ActionResult<AskResult>> {
+export async function askAssistant(question: string, threadText?: string): Promise<ActionResult<AskResult>> {
   const { supabase, error } = await requireAdmin();
   if (error) return { ok: false, error };
   const q = String(question ?? "").trim().slice(0, 500);
   if (!q) return { ok: false, error: "Ask something first." };
+  // Simulated thread: one message per line, first line is the message that started it.
+  const lines = String(threadText ?? "").split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const thread = lines.length ? { root: lines[0], others: lines.slice(1) } : undefined;
   const { data: claims } = await supabase.auth.getClaims();
   try {
-    const handled = await handleAsk(supabase, { source: "admin-test", question: q, askerName: (claims?.claims?.email as string | undefined)?.split("@")[0] });
+    const handled = await handleAsk(supabase, { source: "admin-test", question: q, thread, askerName: (claims?.claims?.email as string | undefined)?.split("@")[0] });
     revalidatePath("/admin");
     return {
       ok: true,
@@ -316,6 +321,8 @@ export async function askAssistant(question: string): Promise<ActionResult<AskRe
         model: handled.result.model,
         fallback: handled.result.fallback,
         error: handled.result.error,
+        effectiveQuestion: handled.effectiveQuestion,
+        clarified: handled.clarified,
       },
     };
   } catch (err) {

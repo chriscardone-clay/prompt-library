@@ -33,6 +33,30 @@ export function verifySlackRequest(rawBody: string, timestamp: string | null, si
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+export interface ThreadMessage {
+  user: string | null;
+  bot: boolean;
+  text: string;
+  ts: string;
+}
+
+/**
+ * The messages of a thread, oldest first (root included). Needs channels:history
+ * (public channels), groups:history (private), im:history / mpim:history (DMs).
+ * Returns null when the thread can't be read (missing scope, deleted, etc.).
+ */
+export async function fetchThread(channel: string, threadTs: string, limit = 25): Promise<ThreadMessage[] | null> {
+  const r = await slackApi<{ messages?: { user?: string; bot_id?: string; text?: string; ts: string; subtype?: string }[] }>(
+    "conversations.replies",
+    undefined,
+    { channel, ts: threadTs, limit: String(limit), inclusive: "true" },
+  );
+  if (!r.ok || !r.messages) return null;
+  return r.messages
+    .filter((m) => !m.subtype || m.subtype === "bot_message")
+    .map((m) => ({ user: m.user ?? null, bot: !!m.bot_id, text: m.text ?? "", ts: m.ts }));
+}
+
 /** Display name for a Slack user id (for the model's benefit); null if unknown. */
 export async function lookupSlackUserName(userId: string): Promise<string | null> {
   const r = await slackApi<{ user?: { real_name?: string; profile?: { display_name?: string; real_name?: string } } }>("users.info", undefined, { user: userId });
@@ -72,6 +96,7 @@ export function slackErrorText(code: string): string {
     slack_not_configured: "SLACK_BOT_TOKEN isn't set on the server.",
     missing_scope: "The Slack app is missing a scope. Add chat:write (and im:write for DMs), then reinstall the app.",
     not_in_channel: "The bot isn't in that channel yet. Run /invite @<app name> in the channel, or add the chat:write.public scope.",
+    missing_scope_history: "The Slack app can't read threads. Add the channels:history and groups:history scopes, then reinstall the app.",
     channel_not_found: "That channel ID doesn't exist or the bot can't see it. Use the ID from the channel's About tab (starts with C).",
     users_not_found: "Slack has no account with that email.",
     invalid_auth: "The Slack token was rejected. It may have rotated when the app was reinstalled.",
