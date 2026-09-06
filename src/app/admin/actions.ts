@@ -6,6 +6,8 @@ import type { ActionResult } from "@/app/actions";
 import { ALLOWED_EMAIL_DOMAIN } from "@/lib/constants";
 import { isAdmin } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
+import { composeDigest, getDigestSettings, hasChannelRun, recordRun, windowFor, type WindowKind } from "@/lib/digest/run";
+import { openSlackDm, postSlackMessage, slackConfigured, slackErrorText } from "@/lib/slack";
 
 const HEX = /^#[0-9a-f]{6}$/i;
 const NAME_MAX = 40;
@@ -192,4 +194,90 @@ export async function removeAdmin(email: string): Promise<ActionResult> {
   if (err) return { ok: false, error: err.message };
   revalidateAll();
   return { ok: true, data: undefined };
+}
+
+// ── Weekly digest ───────────────────────────────────────────────────
+
+export interface DigestSettingsInput {
+  enabled: boolean;
+  channel: string;
+  editors_note: string;
+}
+
+const CHANNEL_ID = /^[CG][A-Z0-9]{6,}$/;
+
+export async function saveDigestSettings(input: DigestSettingsInput): Promise<ActionResult> {
+  const { supabase, error } = await requireAdmin();
+  if (error) return { ok: false, error };
+  const channel = String(input.channel ?? "").trim();
+  if (channel && !CHANNEL_ID.test(channel)) {
+    return { ok: false, error: "Use the channel ID (starts with C, from the channel's About tab), not its name." };
+  }
+  if (input.enabled && !channel) return { ok: false, error: "Add the channel ID before enabling the digest." };
+  const { data: claims } = await supabase.auth.getClaims();
+  const { error: e } = await supabase
+    .from("digest_settings")
+    .update({
+      enabled: !!input.enabled,
+      channel,
+      editors_note: String(input.editors_note ?? "").trim().slice(0, 300),
+      updated_at: new Date().toISOString(),
+      updated_by: (claims?.claims?.email as string | undefined) ?? null,
+    })
+    .eq("id", true);
+  if (e) return { ok: false, error: e.message };
+  revalidatePath("/admin");
+  return { ok: true, data: undefined };
+}
+
+/** DM the current admin the digest for the chosen window. Never touches the channel. */
+export async function sendDigestTest(window: WindowKind): Promise<ActionResult<{ where: string }>> {
+  const { supabase, error } = await requireAdmin();
+  if (error) return { ok: false, error };
+  if (!slackConfigured()) return { ok: false, error: slackErrorText("slack_not_configured") };
+  const { data: claims } = await supabase.auth.getClaims();
+  const email = (claims?.claims?.email as string | undefined)?.toLowerCase();
+  if (!email) return { ok: false, error: "Couldn't read your email from the session." };
+
+  const settings = await getDigestSettings(supabase);
+  const w = windowFor(window);
+  const composed = await composeDigest(supabase, w, settings.editors_note);
+  const dm = await openSlackDm(email);
+  if (!dm.ok) return { ok: false, error: slackErrorText(dm.error) };
+  const posted = await postSlackMessage(dm.channel, composed.message);
+  if (!posted.ok) return { ok: false, error: slackErrorText(posted.error) };
+  await recordRun(supabase, { weekStart: w.weekStart, kind: "test", channel: posted.channel, ts: posted.ts, postedBy: email, composed });
+  revalidatePath("/admin");
+  return { ok: true, data: { where: `your Slack DMs (${w.label})` } };
+}
+
+/** Post to the configured channel now. Refuses a second channel post for the same week unless forced. */
+export async function sendDigestNow(window: WindowKind, force: boolean): Promise<ActionResult<{ where: string }>> {
+  const { supabase, error } = await requireAdmin();
+  if (error) return { ok: false, error };
+  if (!slackConfigured()) return { ok: false, error: slackErrorText("slack_not_configured") };
+  const { data: claims } = await supabase.auth.getClaims();
+  const email = (claims?.claims?.email as string | undefined)?.toLowerCase() ?? "admin";
+
+  const settings = await getDigestSettings(supabase);
+  if (!settings.channel) return { ok: false, error: "Add the channel ID first." };
+  const w = windowFor(window);
+  const already = await hasChannelRun(supabase, w.weekStart);
+  if (already && !force) {
+    return { ok: false, error: `The channel already got the digest for the week of ${w.weekStart}. Tick “Post again anyway” to resend.` };
+  }
+  const composed = await composeDigest(supabase, w, settings.editors_note);
+  const posted = await postSlackMessage(settings.channel, composed.message);
+  if (!posted.ok) return { ok: false, error: slackErrorText(posted.error) };
+  await recordRun(supabase, {
+    weekStart: w.weekStart,
+    kind: already ? "resend" : "channel",
+    channel: posted.channel,
+    ts: posted.ts,
+    postedBy: email,
+    composed,
+  });
+  if (settings.editors_note) await supabase.from("digest_settings").update({ editors_note: "" }).eq("id", true);
+  revalidatePath("/admin");
+  return { ok: true, data: { where: `#channel ${settings.channel} (${w.label})` } };
 }

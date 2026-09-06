@@ -1,27 +1,68 @@
 import "server-only";
 
 /**
- * Slack lookups. Needs a bot token with the `users:read` and
- * `users:read.email` scopes in SLACK_BOT_TOKEN. Without one, every function
- * here is a no-op so the app keeps working with initials avatars.
+ * Slack Web API. Needs a bot token in SLACK_BOT_TOKEN with:
+ *   users:read, users:read.email  – look people up by email (avatars, test DMs)
+ *   chat:write                    – post the weekly digest / DMs
+ *   im:write                      – open the DM used by "Send test to me"
+ * Without a token every function here is a no-op / returns a clear error, so
+ * the app keeps working with initials avatars and no digest.
  */
 
 const TOKEN = process.env.SLACK_BOT_TOKEN?.trim() || "";
-const TIMEOUT_MS = 4000;
+const TIMEOUT_MS = 6000;
 
 export const slackConfigured = () => TOKEN.length > 0;
 
-interface LookupResponse {
-  ok: boolean;
-  error?: string;
-  user?: {
-    deleted?: boolean;
-    profile?: {
-      image_192?: string;
-      image_512?: string;
-      is_custom_image?: boolean;
-    };
+type SlackResponse<T> = ({ ok: true } & T) | { ok: false; error: string; needed?: string; provided?: string };
+
+async function slackApi<T>(method: string, body?: Record<string, unknown>, query?: Record<string, string>): Promise<SlackResponse<T>> {
+  if (!slackConfigured()) return { ok: false, error: "slack_not_configured" };
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  try {
+    const qs = query ? "?" + new URLSearchParams(query).toString() : "";
+    const res = await fetch(`https://slack.com/api/${method}${qs}`, {
+      method: body ? "POST" : "GET",
+      headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json; charset=utf-8" },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: ctrl.signal,
+      cache: "no-store",
+    });
+    const json = (await res.json()) as SlackResponse<T>;
+    if (!json.ok) console.warn(`[slack] ${method} failed: ${json.error}${json.needed ? ` (needs scope ${json.needed})` : ""}`);
+    return json;
+  } catch (err) {
+    console.warn(`[slack] ${method} error`, err instanceof Error ? err.message : err);
+    return { ok: false, error: "network_error" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Human wording for the Slack error codes admins are likely to hit. */
+export function slackErrorText(code: string): string {
+  const map: Record<string, string> = {
+    slack_not_configured: "SLACK_BOT_TOKEN isn't set on the server.",
+    missing_scope: "The Slack app is missing a scope. Add chat:write (and im:write for DMs), then reinstall the app.",
+    not_in_channel: "The bot isn't in that channel yet. Run /invite @<app name> in the channel, or add the chat:write.public scope.",
+    channel_not_found: "That channel ID doesn't exist or the bot can't see it. Use the ID from the channel's About tab (starts with C).",
+    users_not_found: "Slack has no account with that email.",
+    invalid_auth: "The Slack token was rejected. It may have rotated when the app was reinstalled.",
+    network_error: "Couldn't reach Slack. Try again.",
+    ratelimited: "Slack rate-limited the request. Wait a minute and try again.",
   };
+  return map[code] ?? `Slack error: ${code}`;
+}
+
+interface LookupUser {
+  user?: { id: string; deleted?: boolean; profile?: { image_192?: string; image_512?: string; is_custom_image?: boolean } };
+}
+
+/** Slack user id for an email, or null when unknown / not configured. */
+export async function lookupSlackUserId(email: string): Promise<string | null> {
+  const r = await slackApi<LookupUser>("users.lookupByEmail", undefined, { email });
+  return r.ok && r.user && !r.user.deleted ? r.user.id : null;
 }
 
 /**
@@ -33,28 +74,37 @@ interface LookupResponse {
  */
 export async function lookupSlackAvatar(email: string): Promise<string | null | undefined> {
   if (!slackConfigured()) return undefined;
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-  try {
-    const res = await fetch(
-      `https://slack.com/api/users.lookupByEmail?email=${encodeURIComponent(email)}`,
-      { headers: { Authorization: `Bearer ${TOKEN}` }, signal: ctrl.signal, cache: "no-store" },
-    );
-    if (!res.ok) return undefined;
-    const json = (await res.json()) as LookupResponse;
-    if (!json.ok) {
-      // users_not_found is a real answer; everything else is our problem.
-      if (json.error === "users_not_found") return null;
-      console.warn(`[slack] users.lookupByEmail failed: ${json.error}`);
-      return undefined;
-    }
-    const p = json.user?.profile;
-    if (!p || json.user?.deleted || p.is_custom_image === false) return null;
-    return p.image_192 || p.image_512 || null;
-  } catch (err) {
-    console.warn("[slack] lookup error", err instanceof Error ? err.message : err);
-    return undefined;
-  } finally {
-    clearTimeout(timer);
-  }
+  const r = await slackApi<LookupUser>("users.lookupByEmail", undefined, { email });
+  if (!r.ok) return r.error === "users_not_found" ? null : undefined;
+  const p = r.user?.profile;
+  if (!p || r.user?.deleted || p.is_custom_image === false) return null;
+  return p.image_192 || p.image_512 || null;
+}
+
+export interface SlackMessage {
+  blocks: Record<string, unknown>[];
+  text: string;
+}
+
+/** Post a Block Kit message. `channel` is a channel id (C…) or a DM id (D…). */
+export async function postSlackMessage(
+  channel: string,
+  message: SlackMessage,
+): Promise<{ ok: true; ts: string; channel: string } | { ok: false; error: string }> {
+  const r = await slackApi<{ ts: string; channel: string }>("chat.postMessage", {
+    channel,
+    text: message.text,
+    blocks: message.blocks,
+    unfurl_links: false,
+    unfurl_media: false,
+  });
+  return r.ok ? { ok: true, ts: r.ts, channel: r.channel } : { ok: false, error: r.error };
+}
+
+/** Open (or find) the bot's DM with the person behind an email. Needs im:write. */
+export async function openSlackDm(email: string): Promise<{ ok: true; channel: string } | { ok: false; error: string }> {
+  const userId = await lookupSlackUserId(email);
+  if (!userId) return { ok: false, error: "users_not_found" };
+  const r = await slackApi<{ channel: { id: string } }>("conversations.open", { users: userId });
+  return r.ok ? { ok: true, channel: r.channel.id } : { ok: false, error: r.error };
 }

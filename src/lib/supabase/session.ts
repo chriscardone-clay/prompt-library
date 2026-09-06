@@ -4,7 +4,8 @@ import { ALLOWED_EMAIL_DOMAIN } from "@/lib/constants";
 import { cookieOptions } from "./cookies";
 import { supabaseKey, supabaseUrl } from "./env";
 
-const PUBLIC_PATHS = ["/login", "/auth"];
+// /api/digest authenticates itself with CRON_SECRET (see src/app/api/digest/route.ts).
+const PUBLIC_PATHS = ["/login", "/auth", "/api/digest"];
 
 function isPublic(pathname: string) {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
