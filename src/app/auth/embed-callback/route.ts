@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
   }
   if (!code) return NextResponse.json({ error: "Missing code." }, { status: 400 });
 
-  const supabase = await createClient();
+  const supabase = await createClient({ pkceCookie: "partitioned" });
   const { data, error } = await supabase.auth.exchangeCodeForSession(code);
   if (error || !data.user) {
     const msg = error?.message ?? "";

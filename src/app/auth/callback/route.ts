@@ -23,7 +23,37 @@ export async function GET(request: NextRequest) {
   if (error || !data.user) {
     // The database trigger rejects non-Clay accounts; surface that as a domain error.
     const msg = error?.message ?? "";
-    const kind = /accounts can sign in|Database error/i.test(msg) ? "domain" : "oauth";
+    const verifierMissing = error?.name === "AuthPKCECodeVerifierMissingError" || /code verifier/i.test(msg);
+    const kind = /accounts can sign in|Database error/i.test(msg) ? "domain" : verifierMissing ? "verifier" : "oauth";
+    const retried = searchParams.get("retry") === "1";
+    console.error("[auth] code exchange failed", {
+      kind,
+      retried,
+      name: error?.name,
+      message: msg,
+      hadVerifierCookie: request.cookies.getAll().some((c) => c.name.includes("code-verifier")),
+      cookieNames: request.cookies.getAll().map((c) => c.name),
+      userAgent: request.headers.get("user-agent"),
+    });
+
+    if (verifierMissing && !retried) {
+      // The browser came back from Google without the cookie that holds the
+      // PKCE verifier (typically a sign-in that started in one browser context
+      // and finished in another, e.g. an in-app browser). Start one fresh
+      // flow from this top-level page: the verifier is stored as a plain
+      // first-party cookie here, and Google already knows the account, so the
+      // round trip is instant. `retry=1` guarantees we never loop.
+      const { data: again } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}&retry=1`,
+          skipBrowserRedirect: true,
+          queryParams: { hd: ALLOWED_EMAIL_DOMAIN },
+        },
+      });
+      if (again?.url) return NextResponse.redirect(again.url);
+    }
+
     return NextResponse.redirect(`${origin}/login?error=${kind}`);
   }
 

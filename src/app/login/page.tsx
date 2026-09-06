@@ -17,6 +17,8 @@ const FEATURES = [
 const ERRORS: Record<string, string> = {
   domain: `That account isn't on ${ALLOWED_EMAIL_DOMAIN}. Sign in with your work Google account.`,
   oauth: "Google sign-in didn't complete. Try again.",
+  verifier:
+    "Your browser didn't keep the sign-in cookie, so Google couldn't hand you back. Open www.clayprompts.com directly in Safari or Chrome (not inside Slack, Notion or another app) and try again.",
 };
 
 export default async function LoginPage({
