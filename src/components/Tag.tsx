@@ -7,10 +7,10 @@ export function appLabel(a: PromptApp): string {
 }
 
 /** App tag in the app's catalog colours (100 tint background, 400 ink; derived in dark mode). */
-export function AppTag({ app, tone = FALLBACK_TONE }: { app: PromptApp; tone?: Tone }) {
+export function AppTag({ app, tone = FALLBACK_TONE, short = false }: { app: PromptApp; tone?: Tone; short?: boolean }) {
   return (
-    <span className="tag tone" style={toneStyle(tone)}>
-      {appLabel(app)}
+    <span className="tag tone" style={toneStyle(tone)} title={short && app.surfaces.length ? appLabel(app) : undefined}>
+      {short ? app.app : appLabel(app)}
     </span>
   );
 }

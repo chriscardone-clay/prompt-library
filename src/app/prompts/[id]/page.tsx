@@ -5,6 +5,7 @@ import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
 import { Avatar } from "@/components/Avatar";
 import { DeleteButton } from "@/components/DeleteButton";
+import { FavoriteButton } from "@/components/FavoriteButton";
 import { FeedbackSection } from "@/components/FeedbackSection";
 import { Header } from "@/components/Header";
 import { PromptBody } from "@/components/PromptBody";
@@ -15,6 +16,7 @@ import { SkillLinks } from "@/components/SkillLinks";
 import { AppTag, AudienceTag, PrivateTag, SkillTag } from "@/components/Tag";
 import { appTone } from "@/lib/catalog";
 import { skillSlug } from "@/lib/skills";
+import { shouldNudgeToSlack } from "@/lib/slackNudge";
 import { ToastFromQuery } from "@/components/Toast";
 import { VariantsTree } from "@/components/VariantsTree";
 import { VersionHistory } from "@/components/VersionHistory";
@@ -59,9 +61,10 @@ export default async function PromptPage({ params }: { params: Params }) {
   const parent = prompt.parentId ? nodes.find((n) => n.id === prompt.parentId) ?? null : null;
   const lastEditor = resolveLastEditor(prompt, nodes, user);
 
+  const nudge = await shouldNudgeToSlack(user);
   return (
     <div className="container">
-      <Header user={user} />
+      <Header user={user} slackNudge={nudge} />
       <Suspense fallback={null}>
         <ToastFromQuery />
       </Suspense>
@@ -115,6 +118,7 @@ export default async function PromptPage({ params }: { params: Params }) {
               size="md"
               surface="page"
             />
+            <FavoriteButton promptId={prompt.id} favorited={prompt.favoritedBy.includes(user.id)} variant="pill" />
             <Link href={`/prompts/${prompt.id}/fork`} className="btn btn-outline">
               <GitFork weight="bold" size={15} />
               Fork

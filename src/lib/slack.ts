@@ -57,6 +57,27 @@ export async function fetchThread(channel: string, threadTs: string, limit = 25)
     .map((m) => ({ user: m.user ?? null, bot: !!m.bot_id, text: m.text ?? "", ts: m.ts }));
 }
 
+/**
+ * Is this Slack user in the channel? Pages through conversations.members
+ * (needs channels:read; groups:read for private channels). Returns null when
+ * Slack can't tell us, so callers don't nag people by mistake.
+ */
+export async function isChannelMember(channel: string, userId: string): Promise<boolean | null> {
+  let cursor: string | undefined;
+  for (let page = 0; page < 20; page++) {
+    const r = await slackApi<{ members?: string[]; response_metadata?: { next_cursor?: string } }>(
+      "conversations.members",
+      undefined,
+      { channel, limit: "1000", ...(cursor ? { cursor } : {}) },
+    );
+    if (!r.ok) return null;
+    if (r.members?.includes(userId)) return true;
+    cursor = r.response_metadata?.next_cursor || undefined;
+    if (!cursor) return false;
+  }
+  return null;
+}
+
 /** Display name for a Slack user id (for the model's benefit); null if unknown. */
 export async function lookupSlackUserName(userId: string): Promise<string | null> {
   const r = await slackApi<{ user?: { real_name?: string; profile?: { display_name?: string; real_name?: string } } }>("users.info", undefined, { user: userId });

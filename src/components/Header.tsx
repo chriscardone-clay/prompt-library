@@ -1,19 +1,23 @@
-import { Files, Plus } from "@phosphor-icons/react/dist/ssr";
+import { Files, Heart, Plus } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { Suspense } from "react";
 import type { Profile } from "@/lib/types";
 import { AccountMenu } from "./AccountMenu";
 import { ClayLogo } from "./ClayLogo";
 import { OpenInNewTab } from "./OpenInNewTab";
+import { SlackBanner } from "./SlackBanner";
 import styles from "./Header.module.css";
 
 interface Props {
   user: Profile;
-  active?: "discover" | "mine" | null;
+  active?: "discover" | "mine" | "favorites" | null;
+  /** Show the "join #auto-clayprompts" banner under the header (decided server-side). */
+  slackNudge?: boolean;
 }
 
-export function Header({ user, active = null }: Props) {
+export function Header({ user, active = null, slackNudge = false }: Props) {
   return (
+    <>
     <header className={styles.header}>
       <Link href="/" className={styles.brand}>
         <ClayLogo className={styles.logo} />
@@ -28,11 +32,19 @@ export function Header({ user, active = null }: Props) {
           Discover
         </Link>
         <Link
+          href="/favorites"
+          className={styles.navLink}
+          aria-current={active === "favorites" ? "page" : undefined}
+        >
+          <Heart weight="fill" size={14} className={styles.heart} />
+          Favorites
+        </Link>
+        <Link
           href="/mine"
           className={styles.navLink}
           aria-current={active === "mine" ? "page" : undefined}
         >
-          My library
+          Created
         </Link>
       </nav>
       <div className="grow" />
@@ -51,5 +63,7 @@ export function Header({ user, active = null }: Props) {
       </Suspense>
       <AccountMenu user={user} />
     </header>
+    {slackNudge ? <SlackBanner /> : null}
+    </>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckSquare, FunnelSimple, LockSimple, MagnifyingGlass, Square, X } from "@phosphor-icons/react";
+import { CheckSquare, FunnelSimple, GitFork, LockSimple, MagnifyingGlass, Square, X } from "@phosphor-icons/react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -18,14 +18,15 @@ import { isSort, SORT_LABELS, SORTS, type Kind, type Sort } from "@/lib/constant
 import { ago, plural } from "@/lib/format";
 import type { Profile, Prompt } from "@/lib/types";
 import { Avatar } from "./Avatar";
-import { AppTag, AudienceTag, ForkTag, SkillTag } from "./Tag";
+import { FavoriteButton } from "./FavoriteButton";
+import { AppTag, SkillTag } from "./Tag";
 import { VoteButton } from "./VoteButton";
 import styles from "./PromptList.module.css";
 
 interface Props {
-  view: "discover" | "mine";
+  view: "discover" | "mine" | "favorites";
   prompts: Prompt[];
-  /** Used for fork counts on the My library view, where `prompts` is a subset. */
+  /** Used for fork counts on the Created / Favorites views, where `prompts` is a subset. */
   allPrompts?: Prompt[];
   me: Profile;
   catalog: Catalog;
@@ -187,11 +188,21 @@ export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
   }, [prompts, kind, q, params.get("apps"), params.get("surfaces"), params.get("teams"), sort]);
 
   const title =
-    view === "mine" ? "My library" : kind === "skill" ? "Discover skills" : kind === "prompt" ? "Discover prompts" : "Discover";
+    view === "mine"
+      ? "Created"
+      : view === "favorites"
+        ? "Favorites"
+        : kind === "skill"
+          ? "Discover skills"
+          : kind === "prompt"
+            ? "Discover prompts"
+            : "Discover";
   const countLabel =
     view === "mine"
       ? `${plural(list.length, "item")} you own or edit`
-      : plural(list.length, kind === "skill" ? "skill" : kind === "prompt" ? "prompt" : "item");
+      : view === "favorites"
+        ? `${plural(list.length, "item")} you saved`
+        : plural(list.length, kind === "skill" ? "skill" : kind === "prompt" ? "prompt" : "item");
   const newHref = kind === "skill" ? "/skills/new" : "/prompts/new";
   const newLabel = kind === "skill" ? "New skill" : "New prompt";
 
@@ -416,12 +427,14 @@ export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
           ) : (
             <div className={styles.empty}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/icons/Templates.png" alt="" className={styles.emptyIcon} />
-              <div className={styles.emptyTitle}>Nothing matches yet</div>
+              <img src={view === "favorites" && !hasActive ? "/icons/Heart.png" : "/icons/Templates.png"} alt="" className={styles.emptyIcon} />
+              <div className={styles.emptyTitle}>{view === "favorites" && !hasActive ? "Nothing saved yet" : "Nothing matches yet"}</div>
               <div className={styles.emptyText}>
-                {kind === "skill"
-                  ? "Clear a filter, or share the skill your team keeps rebuilding."
-                  : "Clear a filter, or write the prompt your team keeps asking for."}
+                {view === "favorites" && !hasActive
+                  ? "Tap the heart on any prompt or skill to keep it here for quick access."
+                  : kind === "skill"
+                    ? "Clear a filter, or share the skill your team keeps rebuilding."
+                    : "Clear a filter, or write the prompt your team keeps asking for."}
               </div>
               <div className="row gap-2 wrap" style={{ justifyContent: "center" }}>
                 {hasActive ? (
@@ -455,17 +468,20 @@ function PromptCard({ prompt: p, forks, meId, catalog }: { prompt: Prompt; forks
     <article className={styles.card}>
       <div className={styles.cardTags}>
         {p.kind === "skill" ? <SkillTag /> : null}
-        {p.apps.map((a) => (
-          <AppTag key={a.app} app={a} tone={appTone(catalog, a.app)} />
+        {p.apps.slice(0, 2).map((a) => (
+          <AppTag key={a.app} app={a} tone={appTone(catalog, a.app)} short />
         ))}
-        {p.audiences.map((a) => (
-          <AudienceTag key={a} audience={a} light />
-        ))}
-        {p.parentId ? <ForkTag /> : null}
+        {p.apps.length > 2 ? (
+          <span className="tag tag-light tag-muted" title={p.apps.slice(2).map((a) => a.app).join(", ")}>
+            +{p.apps.length - 2}
+          </span>
+        ) : null}
         <div className="grow" />
+        {p.parentId ? <GitFork weight="bold" size={15} className="muted" aria-label="Forked" /> : null}
         {p.visibility === "private" ? (
           <LockSimple size={16} className="muted" aria-label="Private" />
         ) : null}
+        <FavoriteButton promptId={p.id} favorited={p.favoritedBy.includes(meId)} />
       </div>
       <div className={styles.cardBody}>
         <h2 className={styles.cardTitle}>

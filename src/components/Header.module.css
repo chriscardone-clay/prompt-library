@@ -48,6 +48,17 @@
   font-weight: 500;
   transition: background 120ms var(--ease);
 }
+.navLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.heart {
+  color: #d64541;
+}
+:root[data-theme="dark"] .heart {
+  color: var(--pom-400);
+}
 .navLink:hover {
   background: var(--bg-raised);
   text-decoration: none;

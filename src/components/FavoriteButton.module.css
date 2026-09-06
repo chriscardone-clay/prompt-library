@@ -1,0 +1,61 @@
+/* Heart red: Terra's pomegranate, lifted in dark mode by the token. */
+.icon,
+.pill {
+  --heart: #d64541;
+  transition: background 120ms var(--ease), color 120ms var(--ease), border-color 120ms var(--ease);
+}
+:root[data-theme="dark"] .icon,
+:root[data-theme="dark"] .pill {
+  --heart: var(--pom-400);
+}
+
+/* Cards: 32px round target, tucked into the tag row's right edge. */
+.icon {
+  width: 32px;
+  height: 32px;
+  margin: -6px -8px -6px 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--fg-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.icon:hover {
+  background: var(--oat-100);
+  color: var(--heart);
+}
+.icon[data-on] {
+  color: var(--heart);
+}
+
+/* Detail page: a pill beside the upvote count. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  padding: 10px 16px;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+.pill svg {
+  color: var(--fg-muted);
+}
+.pill:hover {
+  background: var(--bg-raised);
+}
+.pill[data-on] {
+  background: var(--pom-100);
+  border-color: var(--pom-100);
+}
+.pill[data-on] svg {
+  color: var(--heart);
+}

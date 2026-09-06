@@ -76,6 +76,8 @@ export interface Prompt {
   apps: PromptApp[];
   editors: Person[];
   upvoteUserIds: string[];
+  /** Only ever contains the current user (favorites are private), so `includes(me)` is the check. */
+  favoritedBy: string[];
 }
 
 export interface PromptVersion {

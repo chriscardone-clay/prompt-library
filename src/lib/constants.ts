@@ -40,6 +40,11 @@ export const ALLOWED_EMAIL_DOMAIN =
 export const AUTHOR_SLACK_URL = "https://clay-hq.slack.com/archives/D09HBPERX1S";
 export const AUTHOR_HANDLE = "@cc";
 
+/** The Slack channel where the weekly digest lands and the join banner points. */
+export const SLACK_CHANNEL_ID = "C0BV3T33NSH";
+export const SLACK_CHANNEL_NAME = "#auto-clayprompts";
+export const SLACK_CHANNEL_URL = "https://clay-hq.slack.com/archives/C0BV3T33NSH";
+
 export function isVisibility(x: string): x is Visibility {
   return (VISIBILITIES as readonly string[]).includes(x);
 }

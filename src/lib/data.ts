@@ -36,6 +36,7 @@ interface PromptRow {
   prompt_apps: { app: string; surfaces: string[] | null }[];
   prompt_editors: { email: string; profile: ProfileRow | null }[];
   prompt_upvotes: { user_id: string }[];
+  prompt_favorites?: { user_id: string }[];
 }
 
 const PROMPT_SELECT = `
@@ -44,7 +45,8 @@ const PROMPT_SELECT = `
   owner:profiles!prompts_owner_id_fkey ( id, email, name, avatar_url ),
   prompt_apps ( app, surfaces ),
   prompt_editors ( email, profile:profiles!prompt_editors_profile_id_fkey ( id, email, name, avatar_url ) ),
-  prompt_upvotes ( user_id )
+  prompt_upvotes ( user_id ),
+  prompt_favorites ( user_id )
 `;
 
 function toPerson(p: ProfileRow | null | undefined): Person {
@@ -77,6 +79,7 @@ function toPrompt(r: PromptRow): Prompt {
       e.profile ? personFromProfile(e.profile) : personFromEmail(e.email),
     ),
     upvoteUserIds: (r.prompt_upvotes ?? []).map((u) => u.user_id),
+    favoritedBy: (r.prompt_favorites ?? []).map((u) => u.user_id),
   };
 }
 
