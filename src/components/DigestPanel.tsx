@@ -5,8 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { saveDigestSettings, sendDigestNow, sendDigestTest } from "@/app/admin/actions";
-import type { DigestMessage, DigestRun, DigestSettings, SlackBlock } from "@/lib/digest/types";
+import type { DigestMessage, DigestRun, DigestSettings } from "@/lib/digest/types";
 import type { WindowKind } from "@/lib/digest/run";
+import { SlackPreview } from "./SlackPreview";
 import { useToast } from "./Toast";
 import styles from "./DigestPanel.module.css";
 
@@ -128,7 +129,7 @@ export function DigestPanel({ settings, runs, preview, previewError, windowKind,
       </div>
 
       {previewError ? <div className={styles.warn}>{previewError}</div> : null}
-      {preview ? <SlackPreview message={preview.message} /> : null}
+      {preview ? <SlackPreview blocks={preview.message.blocks} /> : null}
 
       <div className={styles.sendRow}>
         <button type="button" className="btn btn-outline btn-sm on-slab" disabled={pending || !slackReady} onClick={test} title={`DM ${meEmail}`}>
@@ -176,63 +177,6 @@ export function DigestPanel({ settings, runs, preview, previewError, windowKind,
         ) : (
           <span className="tiny muted">Nothing sent yet.</span>
         )}
-      </div>
-    </div>
-  );
-}
-
-// ── Block Kit → HTML approximation ─────────────────────────────────
-function mrkdwn(text: string): string {
-  const escaped = text.replace(/&(?!amp;|lt;|gt;)/g, "&amp;");
-  return escaped
-    .replace(/<((?:https?:)[^|>]+)\|([^>]+)>/g, (_m, url, label) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`)
-    .replace(/<((?:https?:)[^>]+)>/g, (_m, url) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`)
-    .replace(/\*([^*\n]+)\*/g, "<b>$1</b>")
-    .replace(/(^|[\s(])_([^_\n]+)_(?=$|[\s).,:;!?])/g, "$1<i>$2</i>")
-    .replace(/\n/g, "<br />");
-}
-
-function textOf(b: SlackBlock): string {
-  const t = b.text as { text?: string } | undefined;
-  return t?.text ?? "";
-}
-
-function SlackPreview({ message }: { message: DigestMessage }) {
-  return (
-    <div className={styles.slack} aria-label="Preview of the Slack message">
-      <div className={styles.slackWho}>
-        <span className={styles.slackAvatar} aria-hidden="true" />
-        <b>Clay Prompt Library</b>
-        <span className={styles.slackApp}>App</span>
-      </div>
-      <div className={styles.slackBody}>
-        {message.blocks.map((b, i) => {
-          switch (b.type) {
-            case "header":
-              return <div key={i} className={styles.slackHeader}>{textOf(b)}</div>;
-            case "context": {
-              const els = (b.elements as { text: string }[]) ?? [];
-              return <div key={i} className={styles.slackContext} dangerouslySetInnerHTML={{ __html: els.map((e) => mrkdwn(e.text)).join(" ") }} />;
-            }
-            case "divider":
-              return <hr key={i} className={styles.slackDivider} />;
-            case "section": {
-              const acc = b.accessory as { text?: { text: string }; url?: string } | undefined;
-              return (
-                <div key={i} className={styles.slackSection}>
-                  <div dangerouslySetInnerHTML={{ __html: mrkdwn(textOf(b)) }} />
-                  {acc?.url ? (
-                    <a className={styles.slackBtn} href={acc.url} target="_blank" rel="noopener noreferrer">
-                      {acc.text?.text ?? "Open"}
-                    </a>
-                  ) : null}
-                </div>
-              );
-            }
-            default:
-              return null;
-          }
-        })}
       </div>
     </div>
   );

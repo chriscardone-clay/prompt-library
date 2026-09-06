@@ -6,6 +6,7 @@ import type { ActionResult } from "@/app/actions";
 import { ALLOWED_EMAIL_DOMAIN } from "@/lib/constants";
 import { isAdmin } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
+import { handleAsk } from "@/lib/agent/handle";
 import { composeDigest, getDigestSettings, hasChannelRun, recordRun, windowFor, type WindowKind } from "@/lib/digest/run";
 import { openSlackDm, postSlackMessage, slackConfigured, slackErrorText } from "@/lib/slack";
 
@@ -280,4 +281,44 @@ export async function sendDigestNow(window: WindowKind, force: boolean): Promise
   if (settings.editors_note) await supabase.from("digest_settings").update({ editors_note: "" }).eq("id", true);
   revalidatePath("/admin");
   return { ok: true, data: { where: `#channel ${settings.channel} (${w.label})` } };
+}
+
+// ── Slack assistant tester ──────────────────────────────────────────
+export interface AskResult {
+  blocks: Record<string, unknown>[];
+  text: string;
+  matches: number;
+  candidates: number;
+  shortlisted: boolean;
+  model: string;
+  fallback: boolean;
+  error?: string;
+}
+
+/** Run the assistant exactly as Slack would, but return the reply here instead of posting it. */
+export async function askAssistant(question: string): Promise<ActionResult<AskResult>> {
+  const { supabase, error } = await requireAdmin();
+  if (error) return { ok: false, error };
+  const q = String(question ?? "").trim().slice(0, 500);
+  if (!q) return { ok: false, error: "Ask something first." };
+  const { data: claims } = await supabase.auth.getClaims();
+  try {
+    const handled = await handleAsk(supabase, { source: "admin-test", question: q, askerName: (claims?.claims?.email as string | undefined)?.split("@")[0] });
+    revalidatePath("/admin");
+    return {
+      ok: true,
+      data: {
+        blocks: handled.message.blocks,
+        text: handled.message.text,
+        matches: handled.result.matches.length,
+        candidates: handled.candidates,
+        shortlisted: handled.shortlisted,
+        model: handled.result.model,
+        fallback: handled.result.fallback,
+        error: handled.result.error,
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }

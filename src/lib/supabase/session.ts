@@ -5,7 +5,7 @@ import { cookieOptions } from "./cookies";
 import { supabaseKey, supabaseUrl } from "./env";
 
 // /api/digest authenticates itself with CRON_SECRET (see src/app/api/digest/route.ts).
-const PUBLIC_PATHS = ["/login", "/auth", "/api/digest"];
+const PUBLIC_PATHS = ["/login", "/auth", "/api/digest", "/api/slack"];
 
 function isPublic(pathname: string) {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));

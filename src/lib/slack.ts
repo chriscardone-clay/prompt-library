@@ -1,18 +1,44 @@
 import "server-only";
+import { createHmac, timingSafeEqual } from "node:crypto";
 
 /**
  * Slack Web API. Needs a bot token in SLACK_BOT_TOKEN with:
  *   users:read, users:read.email  – look people up by email (avatars, test DMs)
- *   chat:write                    – post the weekly digest / DMs
+ *   chat:write                    – post the weekly digest / DMs / replies
  *   im:write                      – open the DM used by "Send test to me"
+ *   app_mentions:read, im:history – receive @mentions and DMs (Events API)
  * Without a token every function here is a no-op / returns a clear error, so
  * the app keeps working with initials avatars and no digest.
  */
 
 const TOKEN = process.env.SLACK_BOT_TOKEN?.trim() || "";
+const SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET?.trim() || "";
 const TIMEOUT_MS = 6000;
 
 export const slackConfigured = () => TOKEN.length > 0;
+export const slackEventsConfigured = () => SIGNING_SECRET.length > 0;
+
+/**
+ * Verify a request really came from Slack (Events API / interactivity):
+ * HMAC-SHA256 of "v0:<timestamp>:<raw body>" with the app's signing secret,
+ * and a five-minute replay window.
+ */
+export function verifySlackRequest(rawBody: string, timestamp: string | null, signature: string | null): boolean {
+  if (!SIGNING_SECRET || !timestamp || !signature) return false;
+  const ts = Number(timestamp);
+  if (!Number.isFinite(ts) || Math.abs(Date.now() / 1000 - ts) > 300) return false;
+  const expected = "v0=" + createHmac("sha256", SIGNING_SECRET).update(`v0:${timestamp}:${rawBody}`).digest("hex");
+  const a = Buffer.from(expected);
+  const b = Buffer.from(signature);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/** Display name for a Slack user id (for the model's benefit); null if unknown. */
+export async function lookupSlackUserName(userId: string): Promise<string | null> {
+  const r = await slackApi<{ user?: { real_name?: string; profile?: { display_name?: string; real_name?: string } } }>("users.info", undefined, { user: userId });
+  if (!r.ok) return null;
+  return r.user?.profile?.display_name || r.user?.real_name || r.user?.profile?.real_name || null;
+}
 
 type SlackResponse<T> = ({ ok: true } & T) | { ok: false; error: string; needed?: string; provided?: string };
 
@@ -86,10 +112,11 @@ export interface SlackMessage {
   text: string;
 }
 
-/** Post a Block Kit message. `channel` is a channel id (C…) or a DM id (D…). */
+/** Post a Block Kit message. `channel` is a channel id (C…) or a DM id (D…). Pass `threadTs` to reply in a thread. */
 export async function postSlackMessage(
   channel: string,
   message: SlackMessage,
+  threadTs?: string,
 ): Promise<{ ok: true; ts: string; channel: string } | { ok: false; error: string }> {
   const r = await slackApi<{ ts: string; channel: string }>("chat.postMessage", {
     channel,
@@ -97,6 +124,7 @@ export async function postSlackMessage(
     blocks: message.blocks,
     unfurl_links: false,
     unfurl_media: false,
+    ...(threadTs ? { thread_ts: threadTs } : {}),
   });
   return r.ok ? { ok: true, ts: r.ts, channel: r.channel } : { ok: false, error: r.error };
 }

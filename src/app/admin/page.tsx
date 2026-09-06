@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { AdminPanel } from "@/components/AdminPanel";
+import { AssistantPanel } from "@/components/AssistantPanel";
 import { DigestPanel } from "@/components/DigestPanel";
 import { Header } from "@/components/Header";
 import { getCatalog, getCatalogUsage, getCurrentUser, isAdmin } from "@/lib/data";
 import { composeDigest, getDigestRuns, getDigestSettings, windowFor, type WindowKind } from "@/lib/digest/run";
-import { slackConfigured } from "@/lib/slack";
+import { AGENT_MODEL } from "@/lib/agent/answer";
+import { slackConfigured, slackEventsConfigured } from "@/lib/slack";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -21,13 +23,23 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const windowKind: WindowKind = window === "rolling" ? "rolling" : "last";
 
   const supabase = await createClient();
-  const [catalog, usage, adminsRes, settings, runs] = await Promise.all([
+  const [catalog, usage, adminsRes, settings, runs, asksRes] = await Promise.all([
     getCatalog(),
     getCatalogUsage(),
     supabase.from("admins").select("email").order("email"),
     getDigestSettings(supabase),
     getDigestRuns(supabase),
+    supabase.from("agent_requests").select("id, created_at, source, question, matched_ids, fallback, error").order("created_at", { ascending: false }).limit(8),
   ]);
+  const recentAsks = ((asksRes.data ?? []) as { id: string; created_at: string; source: string; question: string; matched_ids: string[]; fallback: boolean; error: string | null }[]).map((r) => ({
+    id: r.id,
+    created_at: r.created_at,
+    source: r.source,
+    question: r.question,
+    matched: r.matched_ids?.length ?? 0,
+    fallback: r.fallback,
+    error: r.error,
+  }));
   const admins = ((adminsRes.data ?? []) as { email: string }[]).map((a) => a.email);
 
   let preview: { label: string; weekStart: string; message: Awaited<ReturnType<typeof composeDigest>>["message"] } | null = null;
@@ -53,6 +65,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           slackReady={slackConfigured()}
           meEmail={user.email.toLowerCase()}
         />
+      </div>
+      <div style={{ maxWidth: 960, marginTop: 28 }}>
+        <AssistantPanel eventsReady={slackEventsConfigured()} slackReady={slackConfigured()} model={AGENT_MODEL} recent={recentAsks} />
       </div>
     </div>
   );
