@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/Header";
 import { PromptEditor } from "@/components/PromptEditor";
-import { SKILL_TEMPLATE } from "@/lib/constants";
 import { activeApps, activeTeams } from "@/lib/catalog";
 import { getCatalog, getCurrentUser } from "@/lib/data";
 import { personFromProfile } from "@/lib/people";
@@ -27,7 +26,7 @@ export default async function NewSkillPage() {
           description: "",
           body: "",
           notes: "",
-          files: [{ name: "SKILL.md", content: SKILL_TEMPLATE }],
+          files: [],
           links: [],
           apps: activeApps(catalog).slice(0, 1).map((a) => ({ app: a.name, surfaces: [], model: "", required: false })),
           audiences: activeTeams(catalog).slice(0, 1).map((t) => t.name),

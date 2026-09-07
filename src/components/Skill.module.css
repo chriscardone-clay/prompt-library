@@ -246,3 +246,8 @@
   min-width: 0;
   font-family: var(--font-mono);
 }
+
+.editorFiles[data-dragging] {
+  outline: 2px solid var(--tangerine-300);
+  outline-offset: 2px;
+}

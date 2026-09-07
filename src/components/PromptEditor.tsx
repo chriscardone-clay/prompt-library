@@ -2,23 +2,27 @@
 
 import {
   ArrowLeft,
+  CaretDown,
+  CaretUp,
+  CheckSquare,
   Cube,
   FileText,
   GitFork,
   GlobeHemisphereWest,
   Link as LinkIcon,
   LockSimple,
+  PencilSimple,
   Plus,
+  Square,
   Trash,
   UploadSimple,
   X,
 } from "@phosphor-icons/react";
-import { CheckSquare, Square } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPrompt, updatePrompt } from "@/app/actions";
-import { activeApps, activeTeams, appTone, surfacesOf, toneStyle, type Catalog } from "@/lib/catalog";
+import { activeApps, activeTeams, appTone, REQUIRED_TONE, surfacesOf, toneStyle, type Catalog } from "@/lib/catalog";
 import {
   ALLOWED_EMAIL_DOMAIN,
   MAX_SKILL_BYTES,
@@ -46,6 +50,9 @@ import styles from "./PromptEditor.module.css";
 import skillStyles from "./Skill.module.css";
 
 export type EditorMode = "create" | "edit" | "fork";
+/** How a new skill arrives: pick a route first, then the form appears. */
+type Route = "" | "upload" | "write" | "link" | "existing";
+type Section = "" | "apps" | "auds" | "vis" | "team";
 
 interface Props {
   mode: EditorMode;
@@ -79,6 +86,10 @@ export function PromptEditor({
 }: Props) {
   const [d, setD] = useState<PromptDraft>(initial);
   const [fileIdx, setFileIdx] = useState(0);
+  // New skills start by choosing how the skill arrives; everything else has an "existing" route.
+  const [route, setRoute] = useState<Route>(mode === "create" && initial.kind === "skill" ? "" : "existing");
+  // The Details accordion opens one section at a time.
+  const [openSec, setOpenSec] = useState<Section>("");
   const [invite, setInvite] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [queue, setQueue] = useState<QueueItem[]>([]);
@@ -87,6 +98,7 @@ export function PromptEditor({
     ? "Adding files… publish is available once they finish."
     : null;
   const [pending, start] = useTransition();
+  const [dragging, setDragging] = useState(false);
   // The row's id is fixed up front so binary uploads can land in its storage
   // folder before the row exists. Editing reuses the real id.
   const [draftId] = useState(() => (mode === "edit" && promptId ? promptId : crypto.randomUUID()));
@@ -118,12 +130,13 @@ export function PromptEditor({
           ? `The skill totals ${formatBytes(totalBytes)}; the limit is ${formatBytes(MAX_SKILL_BYTES)}. Remove some files.`
           : `Text files total ${formatBytes(textBytes)}; the limit is ${formatBytes(MAX_SKILL_TEXT_BYTES)}. Trim or remove some.`
       : !d.apps.length
-        ? "Pick at least one tool."
+        ? "Pick at least one app."
         : !d.audiences.length
-          ? "Pick at least one audience."
+          ? "Pick at least one team."
           : isSkill
             ? "Add a title and at least one file or link."
             : "Add a title and a prompt to continue.";
+  const readyHint = "Everything needed is filled in.";
 
   const peopleByEmail = useMemo(() => {
     const m = new Map<string, Person>();
@@ -183,10 +196,19 @@ export function PromptEditor({
   const patchQueue = (id: string, patch: Partial<QueueItem>) =>
     setQueue((q) => q.map((i) => (i.id === id ? { ...i, ...patch } : i)));
 
-  const onUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const list = Array.from(e.target.files ?? []);
     e.target.value = "";
+    void ingestFiles(list);
+  };
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    void ingestFiles(Array.from(e.dataTransfer?.files ?? []));
+  };
+  const ingestFiles = async (list: File[]) => {
     if (!list.length || uploading) return;
+    if (route === "") setRoute("upload");
     const archives = list.filter((f) => isArchiveName(f.name)).length;
     if (queueTimer.current) clearTimeout(queueTimer.current);
 
@@ -277,6 +299,8 @@ export function PromptEditor({
           ...base.filter((x) => !added.some((a) => a.name.toLowerCase() === x.name.toLowerCase())),
           ...added,
         ];
+        // SKILL.md leads the tab strip; everything else keeps its arrival order.
+        merged.sort((a, b) => Number(isSkillMd(b.name)) - Number(isSkillMd(a.name)));
         const md = added.find((x) => isSkillMd(x.name));
         const patch: Partial<PromptDraft> = {};
         if (md) {
@@ -322,6 +346,44 @@ export function PromptEditor({
     show(`Invited ${(peopleByEmail.get(email) ?? personFromEmail(email)).name}`);
   };
 
+  // ── Routes (new skills) ───────────────────────────────────────────
+  const pickRoute = (r: Route) => {
+    setRoute(r);
+    // Blank link rows are scaffolding, not entered data: drop them when leaving the link route.
+    const links = r === "link" ? d.links : d.links.filter((l) => l.url.trim() || l.label.trim());
+    const patch: Partial<PromptDraft> = links.length !== d.links.length ? { links } : {};
+    if (r === "write" && !d.files.length) {
+      patch.files = [{ name: "SKILL.md", content: SKILL_TEMPLATE }];
+      setFileIdx(0);
+    }
+    if (r === "link" && !d.links.length) patch.links = [{ label: "", url: "" }];
+    if (Object.keys(patch).length) upd(patch);
+  };
+  const needsRoute = isSkill && route === "";
+  const showRouteSwitch = isSkill && route !== "" && route !== "existing";
+  const showFiles = isSkill && (route !== "link" || d.files.length > 0);
+  const showLinks = isSkill && (route === "link" || d.links.length > 0);
+  const showAddOther = isSkill && route !== "" && ((route === "link" && !d.files.length) || (route !== "link" && !d.links.length));
+  const filesRequired = isSkill && route !== "link" && !hasUrl;
+  const linksRequired = isSkill && route === "link" && !d.files.length;
+  const addOther = () => {
+    if (route === "link") {
+      upd({ files: [{ name: "SKILL.md", content: SKILL_TEMPLATE }] });
+      setFileIdx(0);
+    } else upd({ links: [...d.links, { label: "", url: "" }] });
+  };
+
+  // ── Details accordion summaries ───────────────────────────────────
+  const appSummary = d.apps.length
+    ? d.apps
+        .map((a) => a.app + (a.surfaces.length ? ` (${a.surfaces.join(", ")})` : "") + (a.model.trim() ? ` · ${a.model.trim()}` : ""))
+        .join(", ")
+    : "Pick at least one app";
+  const audSummary = d.audiences.length ? d.audiences.join(", ") : "Pick at least one team";
+  const visSummary = d.visibility === "public" ? "Everyone at Clay" : "Only you and your editors";
+  const teamSummary = d.editors.length ? `You and ${d.editors.length} other${d.editors.length === 1 ? "" : "s"}` : "Just you";
+  const toggleSec = (id: Section) => setOpenSec((cur) => (cur === id ? "" : id));
+
   // ── Save / delete ─────────────────────────────────────────────────
   const save = () => {
     if (!valid || pending) return;
@@ -351,6 +413,196 @@ export function PromptEditor({
 
   const heading = mode === "create" ? `New ${noun}` : mode === "edit" ? `Edit ${noun}` : `Fork ${noun}`;
   const saveLabel = mode === "edit" ? "Save changes" : mode === "fork" ? "Create fork" : `Publish ${noun}`;
+  const subhead = isSkill
+    ? "Three things are needed: a name, the skill itself, and where it works."
+    : "Three things are needed: a name, the prompt, and where it works.";
+  const titleExample = isSkill ? "e.g. Clay formulas" : "e.g. Account research brief";
+  const descExample = isSkill ? "e.g. Teaches the model Clay's formula syntax" : "e.g. A one-page brief on any account before a first call";
+  const Req = () => (
+    <span className={`${styles.req} tone`} style={toneStyle(REQUIRED_TONE)}>
+      Required
+    </span>
+  );
+
+  const filesBlock = (
+    <div className="field">
+      <div className={styles.bodyHead}>
+        <div className={styles.labelRow}>
+          <span className="eyebrow">Files</span>
+          {filesRequired ? <Req /> : null}
+          <span className={styles.example}>SKILL.md plus anything it needs</span>
+        </div>
+        <span className={`tiny ${overLimit ? styles.error : "muted"}`}>
+          {d.files.length} file{d.files.length === 1 ? "" : "s"}
+          {d.files.length ? ` · ${formatBytes(totalBytes)} of ${formatBytes(MAX_SKILL_BYTES)}` : ""}
+        </span>
+      </div>
+      <div
+        className={skillStyles.editorFiles}
+        data-dragging={dragging ? "" : undefined}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!dragging) setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={onDrop}
+      >
+        <div className={skillStyles.editorFileBar}>
+          {d.files.map((f, i) => (
+            <button
+              key={i}
+              type="button"
+              className={skillStyles.fileTab}
+              aria-pressed={i === curIdx}
+              onClick={() => setFileIdx(i)}
+              title={isBinaryFile(f) ? `${f.name} · ${formatBytes(f.size ?? 0)}` : undefined}
+            >
+              {isBinaryFile(f) ? <Cube size={14} /> : <FileText size={14} />}
+              {f.name || "untitled"}
+            </button>
+          ))}
+          <div className="grow" />
+          <button type="button" className="btn btn-outline btn-sm" onClick={addFile}>
+            <Plus weight="bold" size={13} />
+            Add file
+          </button>
+          <label className={skillStyles.uploadLabel} aria-disabled={!!uploading} data-busy={uploading ? "" : undefined}>
+            {uploading ? <span className={skillStyles.btnSpinner} aria-hidden="true" /> : <UploadSimple weight="bold" size={13} />}
+            {uploading ? "Adding files…" : "Upload"}
+            <input type="file" multiple onChange={onUpload} disabled={!!uploading} style={{ display: "none" }} />
+          </label>
+        </div>
+        {curFile ? (
+          <>
+            <div className={skillStyles.editorFileMeta}>
+              <span className="eyebrow" style={{ whiteSpace: "nowrap" }}>
+                File name
+              </span>
+              <input
+                className={skillStyles.fileNameInput}
+                value={curFile.name}
+                onChange={(e) => setFile({ name: e.target.value })}
+                aria-label="File name"
+              />
+              <button type="button" className={skillStyles.removeBtn} onClick={removeFile}>
+                <Trash size={14} />
+                Remove
+              </button>
+            </div>
+            {isBinaryFile(curFile) ? (
+              <div className={skillStyles.binaryView}>
+                <Cube size={28} className="muted" />
+                <div className="stack" style={{ gap: 4 }}>
+                  <div style={{ fontWeight: 500 }}>{curFile.name.split("/").pop()}</div>
+                  <div className="small muted">
+                    Binary file · {formatBytes(curFile.size ?? 0)}
+                    {curFile.type ? ` · ${curFile.type}` : ""}. Stored as-is and included in the .skill download.
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <textarea
+                className={skillStyles.fileEditor}
+                rows={16}
+                spellCheck={false}
+                value={curFile.content}
+                onChange={(e) => setFile({ content: e.target.value })}
+                aria-label={`Contents of ${curFile.name}`}
+              />
+            )}
+          </>
+        ) : (
+          <label className={styles.dropzone} aria-disabled={!!uploading}>
+            <UploadSimple size={26} className="muted" />
+            <span className={styles.dropTitle}>Drop a .skill file, or click to browse</span>
+            <span className={styles.dropSub}>
+              It unpacks into its files here and fills in the title and description from SKILL.md. Text files stay editable; fonts,
+              images and other binaries are stored as-is. Up to {formatBytes(MAX_SKILL_BYTES)} per skill.
+            </span>
+            <input type="file" multiple onChange={onUpload} disabled={!!uploading} style={{ display: "none" }} />
+          </label>
+        )}
+      </div>
+      {queue.length ? <UploadQueue items={queue} /> : null}
+    </div>
+  );
+
+  const linksBlock = (
+    <div className="field">
+      <div className={styles.bodyHead}>
+        <div className={styles.labelRow}>
+          <span className="eyebrow">Links</span>
+          {linksRequired ? <Req /> : null}
+          <span className={styles.example}>Where it lives: a Claude project, a custom GPT, a Town agent</span>
+        </div>
+        <span className="tiny muted">{d.links.length ? `${d.links.length} link${d.links.length === 1 ? "" : "s"}` : "Optional"}</span>
+      </div>
+      <div className="stack gap-2">
+        {d.links.map((l, i) => (
+          <div key={i} className={skillStyles.linkRow}>
+            <input
+              className={`input ${skillStyles.linkLabelInput}`}
+              value={l.label}
+              onChange={(e) => setLink(i, { label: e.target.value })}
+              placeholder="Label, e.g. Claude project"
+              aria-label="Link label"
+            />
+            <input
+              className={`input ${skillStyles.linkUrlInput}`}
+              value={l.url}
+              onChange={(e) => setLink(i, { url: e.target.value })}
+              placeholder="https://claude.ai/project/..."
+              inputMode="url"
+              aria-label="Link URL"
+            />
+            <button type="button" className="icon-btn" aria-label="Remove link" onClick={() => removeLink(i)}>
+              <X size={16} />
+            </button>
+          </div>
+        ))}
+        <button type="button" className="btn btn-outline btn-sm" style={{ alignSelf: "flex-start" }} onClick={addLink}>
+          <LinkIcon weight="bold" size={13} />
+          Add link
+        </button>
+      </div>
+    </div>
+  );
+
+  const appNames = [
+    ...activeApps(catalog).map((a) => a.name),
+    // Keep an archived app visible while it's still selected on this item.
+    ...d.apps.map((x) => x.app).filter((n) => !activeApps(catalog).some((a) => a.name === n)),
+  ];
+  const teamNames = [
+    ...activeTeams(catalog).map((t) => t.name),
+    ...d.audiences.filter((n) => !activeTeams(catalog).some((t) => t.name === n)),
+  ];
+
+  const section = (id: Section, title: string, sub: string, summary: string, filled: boolean, required: boolean, body: React.ReactNode) => {
+    const open = openSec === id;
+    return (
+      <div className={styles.acc} data-open={open ? "" : undefined}>
+        <button type="button" className={styles.accHead} aria-expanded={open} aria-controls={`sec-${id}`} onClick={() => toggleSec(id)}>
+          <span className={styles.accTitles}>
+            <span className={styles.accTitleRow}>
+              <span className={styles.accTitle}>{title}</span>
+              {required && !filled ? <Req /> : null}
+            </span>
+            <span className={styles.accSub}>{sub}</span>
+          </span>
+          <span className={`${styles.accSummary} truncate`} data-unfilled={filled ? undefined : ""}>
+            {summary}
+          </span>
+          {open ? <CaretUp weight="bold" size={14} className="muted" /> : <CaretDown weight="bold" size={14} className="muted" />}
+        </button>
+        {open ? (
+          <div id={`sec-${id}`} className={styles.accBody}>
+            {body}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
 
   return (
     <section className={styles.section}>
@@ -360,220 +612,126 @@ export function PromptEditor({
       </Link>
       <div className={styles.titleBlock}>
         <h1 className="display-md">{heading}</h1>
+        <p className={styles.subhead}>{subhead}</p>
         {mode === "fork" ? (
           <div className={styles.forkLine}>
             <GitFork weight="bold" size={14} />
             <span>
-              Forking <span className={styles.forkParent}>{parentTitle}</span>. Your version stays
-              linked to the original.
+              Forking <span className={styles.forkParent}>{parentTitle}</span>. Your version stays linked to the original.
             </span>
           </div>
         ) : null}
       </div>
 
-      <form
-        className={styles.columns}
-        onSubmit={(e) => {
-          e.preventDefault();
-          save();
-        }}
-      >
-        <div className={styles.main}>
+      {needsRoute ? (
+        <div className={styles.routeGrid} role="group" aria-label="How does this skill arrive?">
+          {(
+            [
+              ["upload", "Upload a .skill file", "It unpacks into files and fills in the name and description.", "/icons/Templates.png"],
+              ["write", "Write it here", "Start from the SKILL.md template and edit in place.", "/icons/Pencil.png"],
+              ["link", "Just link it", "It already lives in a Claude project, a custom GPT, or a Town agent.", "/icons/Search.png"],
+            ] as [Route, string, string, string][]
+          ).map(([key, label, sub, icon]) => (
+            <button key={key} type="button" className={styles.routeCard} onClick={() => pickRoute(key)}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={icon} alt="" className={styles.routeIcon} />
+              <span className={styles.routeLabel}>{label}</span>
+              <span className={styles.routeSub}>{sub}</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <form
+          className={styles.form}
+          onSubmit={(e) => {
+            e.preventDefault();
+            save();
+          }}
+        >
+          {showRouteSwitch ? (
+            <div className={styles.routeSwitch}>
+              <span className="tiny muted">This skill is</span>
+              {(
+                [
+                  ["upload", "A file", FileText],
+                  ["write", "Written here", PencilSimple],
+                  ["link", "A link", LinkIcon],
+                ] as [Route, string, typeof FileText][]
+              ).map(([key, label, Icon]) => (
+                <button key={key} type="button" className={styles.routeChip} aria-pressed={route === key} onClick={() => pickRoute(key)}>
+                  <Icon size={13} />
+                  {label}
+                </button>
+              ))}
+              <span className="tiny muted">Switching keeps what you have entered.</span>
+            </div>
+          ) : null}
+
           <label className="field">
-            <span className="eyebrow">Title</span>
+            <div className={styles.labelRow}>
+              <span className="eyebrow">Title</span>
+              <Req />
+              <span className={styles.example}>{titleExample}</span>
+            </div>
             <input
               className={`input ${styles.titleInput}`}
               value={d.title}
               onChange={(e) => upd({ title: e.target.value })}
-              placeholder={isSkill ? "e.g. Clay formulas" : "e.g. Account research brief"}
+              placeholder="Name it"
               maxLength={200}
               required
             />
           </label>
           <label className="field">
-            <span className="eyebrow">Description</span>
+            <div className={styles.labelRow}>
+              <span className="eyebrow">Description</span>
+              <span className={styles.example}>{descExample}</span>
+            </div>
             <input
               className="input"
               style={{ padding: "11px 14px" }}
               value={d.description}
               onChange={(e) => upd({ description: e.target.value })}
-              placeholder="One sentence on what it does and when to use it"
+              placeholder="One line on what it does and when to use it"
               maxLength={600}
             />
           </label>
           {mode === "fork" ? (
             <label className="field">
-              <span className="eyebrow">What did you change?</span>
+              <div className={styles.labelRow}>
+                <span className="eyebrow">What did you change</span>
+                <span className={styles.example}>e.g. Added a competitor section, cut it to 5 bullets</span>
+              </div>
               <input
                 className="input"
                 style={{ padding: "11px 14px" }}
                 value={d.forkNote}
                 onChange={(e) => upd({ forkNote: e.target.value })}
-                placeholder="e.g. Added a competitor section, cut it to 5 bullets"
+                placeholder="What did you change"
                 maxLength={600}
               />
-              <span className="tiny muted">
-                Shown on the original so others can see how your variant differs.
-              </span>
             </label>
           ) : null}
 
-          {isSkill ? (
-            <>
-              {/* ── Files ── */}
-              <div className="field">
-                <div className={styles.bodyHead}>
-                  <span className="eyebrow">Files</span>
-                  <span className={`tiny ${overLimit ? styles.error : "muted"}`}>
-                    {d.files.length} file{d.files.length === 1 ? "" : "s"}
-                    {d.files.length ? ` · ${formatBytes(totalBytes)} of ${formatBytes(MAX_SKILL_BYTES)}` : ""}
-                  </span>
-                </div>
-                <div className={skillStyles.editorFiles}>
-                  <div className={skillStyles.editorFileBar}>
-                    {d.files.map((f, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        className={skillStyles.fileTab}
-                        aria-pressed={i === curIdx}
-                        onClick={() => setFileIdx(i)}
-                        title={isBinaryFile(f) ? `${f.name} · ${formatBytes(f.size ?? 0)}` : undefined}
-                      >
-                        {isBinaryFile(f) ? <Cube size={14} /> : <FileText size={14} />}
-                        {f.name || "untitled"}
-                      </button>
-                    ))}
-                    <div className="grow" />
-                    <button type="button" className="btn btn-outline btn-sm" onClick={addFile}>
-                      <Plus weight="bold" size={13} />
-                      Add file
-                    </button>
-                    <label className={skillStyles.uploadLabel} aria-disabled={!!uploading} data-busy={uploading ? "" : undefined}>
-                      {uploading ? <span className={skillStyles.btnSpinner} aria-hidden="true" /> : <UploadSimple weight="bold" size={13} />}
-                      {uploading ? "Adding files…" : "Upload .skill or files"}
-                      <input
-                        type="file"
-                        multiple
-                        onChange={onUpload}
-                        disabled={!!uploading}
-                        style={{ display: "none" }}
-                      />
-                    </label>
-                  </div>
-                  {curFile ? (
-                    <>
-                      <div className={skillStyles.editorFileMeta}>
-                        <span className="eyebrow" style={{ whiteSpace: "nowrap" }}>
-                          File name
-                        </span>
-                        <input
-                          className={skillStyles.fileNameInput}
-                          value={curFile.name}
-                          onChange={(e) => setFile({ name: e.target.value })}
-                          aria-label="File name"
-                        />
-                        <button type="button" className={skillStyles.removeBtn} onClick={removeFile}>
-                          <Trash size={14} />
-                          Remove
-                        </button>
-                      </div>
-                      {isBinaryFile(curFile) ? (
-                        <div className={skillStyles.binaryView}>
-                          <Cube size={28} className="muted" />
-                          <div className="stack" style={{ gap: 4 }}>
-                            <div style={{ fontWeight: 500 }}>{curFile.name.split("/").pop()}</div>
-                            <div className="small muted">
-                              Binary file · {formatBytes(curFile.size ?? 0)}
-                              {curFile.type ? ` · ${curFile.type}` : ""}. Stored as-is and included in the
-                              .skill download.
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <textarea
-                          className={skillStyles.fileEditor}
-                          rows={18}
-                          spellCheck={false}
-                          value={curFile.content}
-                          onChange={(e) => setFile({ content: e.target.value })}
-                          aria-label={`Contents of ${curFile.name}`}
-                        />
-                      )}
-                    </>
-                  ) : (
-                    <div className={skillStyles.noFiles}>
-                      No files. Fine if this skill lives at a link below, or add a file to share it as a
-                      .skill.
-                    </div>
-                  )}
-                </div>
-                {queue.length ? <UploadQueue items={queue} /> : null}
-                <span className="tiny muted">
-                  Upload a .skill file and it unpacks into its files here, filling in the title and
-                  description from SKILL.md. Text files are editable; fonts, images and other binaries
-                  are stored as-is. Up to {formatBytes(MAX_SKILL_BYTES)} per skill.
-                </span>
-              </div>
+          {showFiles ? filesBlock : null}
+          {showLinks ? linksBlock : null}
+          {showAddOther ? (
+            <button type="button" className={styles.addOther} onClick={addOther}>
+              <Plus weight="bold" size={13} />
+              {route === "link" ? "Add files as well" : "Add a link as well"}
+            </button>
+          ) : null}
 
-              {/* ── Links ── */}
-              <div className="field">
-                <div className={styles.bodyHead}>
-                  <span className="eyebrow">Links</span>
-                  <span className="tiny muted">
-                    {d.links.length ? `${d.links.length} link${d.links.length === 1 ? "" : "s"}` : "Optional"}
-                  </span>
-                </div>
-                <div className="stack gap-2">
-                  {d.links.map((l, i) => (
-                    <div key={i} className={skillStyles.linkRow}>
-                      <input
-                        className={`input ${skillStyles.linkLabelInput}`}
-                        value={l.label}
-                        onChange={(e) => setLink(i, { label: e.target.value })}
-                        placeholder="Label, e.g. Claude project"
-                        aria-label="Link label"
-                      />
-                      <input
-                        className={`input ${skillStyles.linkUrlInput}`}
-                        value={l.url}
-                        onChange={(e) => setLink(i, { url: e.target.value })}
-                        placeholder="https://"
-                        inputMode="url"
-                        aria-label="Link URL"
-                      />
-                      <button
-                        type="button"
-                        className="icon-btn"
-                        aria-label="Remove link"
-                        onClick={() => removeLink(i)}
-                      >
-                        <X size={16} />
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    className="btn btn-outline btn-sm"
-                    style={{ alignSelf: "flex-start" }}
-                    onClick={addLink}
-                  >
-                    <LinkIcon weight="bold" size={13} />
-                    Add link
-                  </button>
-                </div>
-                <span className="tiny muted">
-                  Where this skill lives in its home app: a Claude project or skill share link, a custom
-                  GPT, a Town agent. Label is optional.
-                </span>
-              </div>
-            </>
-          ) : (
+          {!isSkill ? (
             <div className="field">
               <div className={styles.bodyHead}>
-                <span className="eyebrow">Prompt</span>
+                <div className={styles.labelRow}>
+                  <span className="eyebrow">Prompt</span>
+                  <Req />
+                  <span className={styles.example}>The words you paste into the tool</span>
+                </div>
                 <span className="tiny muted">
-                  Wrap placeholders in <code className={styles.code}>{"{{company}}"}</code>
+                  Placeholders go in <code className={styles.code}>{"{{company}}"}</code>
                 </span>
               </div>
               <textarea
@@ -587,9 +745,7 @@ export function PromptEditor({
               />
               <div className={styles.phRow}>
                 <span className="tiny muted" style={{ marginRight: 4 }}>
-                  {keys.length
-                    ? `${keys.length} placeholder${keys.length === 1 ? "" : "s"} detected:`
-                    : "No placeholders yet."}
+                  {keys.length ? `${keys.length} placeholder${keys.length === 1 ? "" : "s"} detected:` : "No placeholders yet."}
                 </span>
                 {keys.map((k) => (
                   <span key={k} className={styles.phPill}>
@@ -598,7 +754,7 @@ export function PromptEditor({
                 ))}
               </div>
             </div>
-          )}
+          ) : null}
 
           <label className="field">
             <div className={styles.bodyHead}>
@@ -607,28 +763,30 @@ export function PromptEditor({
             </div>
             <textarea
               className="textarea"
-              rows={5}
+              rows={4}
               value={d.notes}
               onChange={(e) => upd({ notes: e.target.value })}
               placeholder={"When to use it, tips, connectors it needs. Start a line with \"- \" for a bullet."}
               maxLength={5000}
             />
           </label>
-        </div>
 
-        <div className={styles.side}>
-          <div className={styles.slab} style={{ gap: 18 }}>
-            <div className={styles.group}>
-              <div className="stack" style={{ gap: 2 }}>
-                <span className="eyebrow">Built for</span>
-                <span className="tiny muted">Pick every tool this works in.</span>
-              </div>
+          {/* ── Details accordion ── */}
+          <div className={styles.details}>
+            <div className="stack" style={{ gap: 2 }}>
+              <span className="eyebrow">Details</span>
+              <span className="tiny muted">Already filled in sensibly. Open a row only if you want to change it.</span>
+            </div>
+
+            {section(
+              "apps",
+              "Where it works",
+              "Apps, surfaces, and a model if one is needed",
+              appSummary,
+              d.apps.length > 0,
+              true,
               <div className={styles.appRows}>
-                {[
-                  ...activeApps(catalog).map((a) => a.name),
-                  // Keep an archived app visible while it's still selected on this item.
-                  ...d.apps.map((x) => x.app).filter((n) => !activeApps(catalog).some((a) => a.name === n)),
-                ].map((a) => {
+                {appNames.map((a) => {
                   const x = d.apps.find((y) => y.app === a);
                   const tone = appTone(catalog, a);
                   const surfs = surfacesOf(catalog, a);
@@ -658,7 +816,7 @@ export function PromptEditor({
                               <span className={styles.fieldLabel}>Surface</span>
                               <div className={styles.surfacePills}>
                                 {pill("Anywhere", x.surfaces.length === 0, () => setSurface(a, null))}
-                                {surfs.map((s) => pill(s, x.surfaces.includes(s), () => setSurface(a, s)))}
+                                {surfs.map((sf) => pill(sf, x.surfaces.includes(sf), () => setSurface(a, sf)))}
                               </div>
                             </div>
                           ) : null}
@@ -689,19 +847,18 @@ export function PromptEditor({
                     </div>
                   );
                 })}
-              </div>
-            </div>
+              </div>,
+            )}
 
-            <div className={styles.group}>
-              <div className="stack" style={{ gap: 2 }}>
-                <span className="eyebrow">Audience</span>
-                <span className="tiny muted">Pick every team this is for.</span>
-              </div>
+            {section(
+              "auds",
+              "Built for",
+              "Which teams should find it",
+              audSummary,
+              d.audiences.length > 0,
+              true,
               <div className={styles.checkRows}>
-                {[
-                  ...activeTeams(catalog).map((t) => t.name),
-                  ...d.audiences.filter((n) => !activeTeams(catalog).some((t) => t.name === n)),
-                ].map((a) => {
+                {teamNames.map((a) => {
                   const on = d.audiences.includes(a);
                   return (
                     <button
@@ -717,89 +874,89 @@ export function PromptEditor({
                     </button>
                   );
                 })}
-              </div>
-            </div>
+              </div>,
+            )}
 
-            <div className={styles.group}>
-              <span className="eyebrow">Visibility</span>
+            {section(
+              "vis",
+              "Visibility",
+              "Who can find it in the library",
+              visSummary,
+              true,
+              false,
               <div className="stack" style={{ gap: 6 }}>
                 {VIS_OPTIONS.map(({ k, label, sub, Icon }) => (
-                  <button
-                    key={k}
-                    type="button"
-                    className={styles.visOption}
-                    aria-pressed={d.visibility === k}
-                    onClick={() => upd({ visibility: k })}
-                  >
+                  <button key={k} type="button" className={styles.visOption} aria-pressed={d.visibility === k} onClick={() => upd({ visibility: k })}>
                     <Icon size={18} className="muted" />
-                    <div className="stack" style={{ gap: 2 }}>
+                    <span className="stack" style={{ gap: 2 }}>
                       <span className={styles.visLabel}>{label}</span>
                       <span className="tiny muted">{sub}</span>
-                    </div>
+                    </span>
                   </button>
                 ))}
-              </div>
-            </div>
-          </div>
+              </div>,
+            )}
 
-          <div className={styles.slab}>
-            <div className="stack" style={{ gap: 4 }}>
-              <span className="eyebrow">Editors</span>
-              <span className="tiny muted">
-                Editors can change the {noun} and resolve feedback. Anyone can fork.
-              </span>
-            </div>
-            <div className="stack" style={{ gap: 8 }}>
-              <EditorRow person={owner} role="Owner" />
-              {d.editors.map((email) => {
-                const p = peopleByEmail.get(email) ?? personFromEmail(email);
-                const removable = isOwner || mode !== "edit" || !initial.editors.includes(email);
-                return (
-                  <EditorRow
-                    key={email}
-                    person={p}
-                    role={p.id ? "Editor" : "Editor · invited"}
-                    onRemove={
-                      removable ? () => upd({ editors: d.editors.filter((e) => e !== email) }) : undefined
-                    }
+            {section(
+              "team",
+              "Editors",
+              "Who else can change it and answer feedback",
+              teamSummary,
+              true,
+              false,
+              <div className="stack" style={{ gap: 12 }}>
+                <div className="stack" style={{ gap: 8 }}>
+                  <EditorRow person={owner} role="Owner" />
+                  {d.editors.map((email) => {
+                    const p = peopleByEmail.get(email) ?? personFromEmail(email);
+                    const removable = isOwner || mode !== "edit" || !initial.editors.includes(email);
+                    return (
+                      <EditorRow
+                        key={email}
+                        person={p}
+                        role={p.id ? "Editor" : "Editor · invited"}
+                        onRemove={removable ? () => upd({ editors: d.editors.filter((e) => e !== email) }) : undefined}
+                      />
+                    );
+                  })}
+                </div>
+                <div className={styles.inviteRow}>
+                  <input
+                    className={styles.inviteInput}
+                    type="email"
+                    value={invite}
+                    onChange={(e) => setInvite(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addEditor();
+                      }
+                    }}
+                    placeholder={`name@${ALLOWED_EMAIL_DOMAIN}`}
+                    aria-label="Invite an editor by email"
                   />
-                );
-              })}
-            </div>
-            <div className={styles.inviteRow}>
-              <input
-                className={styles.inviteInput}
-                type="email"
-                value={invite}
-                onChange={(e) => setInvite(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addEditor();
-                  }
-                }}
-                placeholder={`name@${ALLOWED_EMAIL_DOMAIN}`}
-                aria-label="Invite an editor by email"
-              />
-              <button type="button" className="btn btn-primary btn-sm" onClick={addEditor}>
-                Invite
-              </button>
-            </div>
+                  <button type="button" className="btn btn-primary btn-sm" onClick={addEditor}>
+                    Invite
+                  </button>
+                </div>
+                <span className="tiny muted">Editors can change the {noun} and resolve feedback. Anyone can fork.</span>
+              </div>,
+            )}
           </div>
-        </div>
 
-        <div className={styles.footer}>
-          <button type="submit" className="btn btn-primary btn-lg" disabled={!valid || pending}>
-            {pending ? "Saving…" : saveLabel}
-          </button>
-          <Link href={cancelHref} className="btn btn-outline btn-lg">
-            Cancel
-          </Link>
-          <span className={`tiny ${error ? styles.error : "muted"}`} role={error ? "alert" : undefined}>
-            {error ?? hint}
-          </span>
-        </div>
-      </form>
+          <div className={styles.footer}>
+            <button type="submit" className="btn btn-primary btn-lg" disabled={!valid || pending}>
+              {pending ? "Saving…" : saveLabel}
+            </button>
+            <Link href={cancelHref} className="btn btn-outline btn-lg">
+              Cancel
+            </Link>
+            <span className={`tiny ${error ? styles.error : "muted"}`} role={error ? "alert" : undefined}>
+              {error ?? (valid ? readyHint : hint)}
+            </span>
+          </div>
+        </form>
+      )}
     </section>
   );
 }
