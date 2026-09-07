@@ -13,6 +13,7 @@ import {
   UploadSimple,
   X,
 } from "@phosphor-icons/react";
+import { CheckSquare, Square } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -39,7 +40,6 @@ import { uploadSkillBinary } from "@/lib/supabase/storage";
 import { isBinaryFile, type Person, type PromptApp, type PromptDraft, type SkillFile } from "@/lib/types";
 import { isBinaryName, looksBinary, unzip } from "@/lib/zip";
 import { Avatar } from "./Avatar";
-import { Chip } from "./Chip";
 import { useToast } from "./Toast";
 import { UploadQueue, type QueueItem } from "./UploadQueue";
 import styles from "./PromptEditor.module.css";
@@ -136,15 +136,15 @@ export function PromptEditor({
   // ── Apps ──────────────────────────────────────────────────────────
   const toggleApp = (a: string) => {
     const has = d.apps.some((x) => x.app === a);
-    upd({ apps: has ? d.apps.filter((x) => x.app !== a) : [...d.apps, { app: a, surfaces: [] }] });
+    upd({ apps: has ? d.apps.filter((x) => x.app !== a) : [...d.apps, { app: a, surfaces: [], model: "", required: false }] });
   };
   const setSurface = (a: string, surf: string | null) => {
     upd({
       apps: d.apps.map((x): PromptApp => {
         if (x.app !== a) return x;
-        if (surf === null) return { app: a, surfaces: [] };
+        if (surf === null) return { ...x, surfaces: [] };
         return {
-          app: a,
+          ...x,
           surfaces: x.surfaces.includes(surf)
             ? x.surfaces.filter((s) => s !== surf)
             : [...x.surfaces, surf],
@@ -152,6 +152,10 @@ export function PromptEditor({
       }),
     });
   };
+  const setModel = (a: string, model: string) =>
+    upd({ apps: d.apps.map((x) => (x.app !== a ? x : { ...x, model, required: model.trim() ? x.required : false })) });
+  const setRequired = (a: string, required: boolean) =>
+    upd({ apps: d.apps.map((x) => (x.app !== a ? x : { ...x, required })) });
 
   // ── Skill files ───────────────────────────────────────────────────
   const curIdx = Math.min(fileIdx, Math.max(d.files.length - 1, 0));
@@ -619,58 +623,73 @@ export function PromptEditor({
                 <span className="eyebrow">Built for</span>
                 <span className="tiny muted">Pick every tool this works in.</span>
               </div>
-              <div className={styles.chips}>
+              <div className={styles.appRows}>
                 {[
                   ...activeApps(catalog).map((a) => a.name),
                   // Keep an archived app visible while it's still selected on this item.
                   ...d.apps.map((x) => x.app).filter((n) => !activeApps(catalog).some((a) => a.name === n)),
-                ].map((a) => (
-                  <Chip
-                    key={a}
-                    label={a}
-                    size="lg"
-                    selected={d.apps.some((x) => x.app === a)}
-                    tone={appTone(catalog, a)}
-                    onClick={() => toggleApp(a)}
-                  />
-                ))}
-              </div>
-              {d.apps.filter((x) => surfacesOf(catalog, x.app).length).length ? (
-                <div className={styles.surfaceGroups}>
-                  {d.apps
-                    .filter((x) => surfacesOf(catalog, x.app).length)
-                    .map((x) => {
-                      const tone = appTone(catalog, x.app);
-                      const pill = (label: string, on: boolean, onClick: () => void) => (
-                        <button
-                          key={label}
-                          type="button"
-                          className={styles.surfacePill}
-                          aria-pressed={on}
-                          onClick={onClick}
-                        >
-                          {label}
-                        </button>
-                      );
-                      return (
-                        <div key={x.app} className={`${styles.surfaceGroup} tone`} style={toneStyle(tone)}>
-                          <div className={styles.surfaceHead}>
-                            <span className="eyebrow" style={{ color: "var(--tone-ink)" }}>
-                              {x.app}
-                            </span>
-                            <span className={styles.surfaceHint}>
-                              {x.surfaces.length ? `Works in ${x.surfaces.join(", ")}` : `Works anywhere in ${x.app}`}
-                            </span>
+                ].map((a) => {
+                  const x = d.apps.find((y) => y.app === a);
+                  const tone = appTone(catalog, a);
+                  const surfs = surfacesOf(catalog, a);
+                  const hint = catalog.apps.find((c) => c.name === a)?.modelHint || "e.g. model name";
+                  const pill = (label: string, on: boolean, onClick: () => void) => (
+                    <button key={label} type="button" className={styles.surfacePill} aria-pressed={on} onClick={onClick}>
+                      {label}
+                    </button>
+                  );
+                  return (
+                    <div key={a} className={`${styles.appRow} tone`} style={toneStyle(tone)} data-on={x ? "" : undefined}>
+                      <button type="button" className={styles.appRowHead} role="checkbox" aria-checked={!!x} onClick={() => toggleApp(a)}>
+                        {x ? (
+                          <CheckSquare weight="fill" size={18} style={{ color: "var(--tone-ink)" }} />
+                        ) : (
+                          <Square size={18} style={{ color: "var(--tone-ink)" }} />
+                        )}
+                        <span className="grow">{a}</span>
+                        {x ? (
+                          <span className="tiny muted">{x.surfaces.length ? `Works in ${x.surfaces.join(", ")}` : `Works anywhere in ${a}`}</span>
+                        ) : null}
+                      </button>
+                      {x ? (
+                        <div className={styles.appRowBody}>
+                          {surfs.length ? (
+                            <div className={styles.fieldRow}>
+                              <span className={styles.fieldLabel}>Surface</span>
+                              <div className={styles.surfacePills}>
+                                {pill("Anywhere", x.surfaces.length === 0, () => setSurface(a, null))}
+                                {surfs.map((s) => pill(s, x.surfaces.includes(s), () => setSurface(a, s)))}
+                              </div>
+                            </div>
+                          ) : null}
+                          <div className={styles.fieldRow}>
+                            <label className={styles.fieldLabel} htmlFor={`model-${a}`}>
+                              Model
+                            </label>
+                            <input
+                              id={`model-${a}`}
+                              className={`input ${styles.modelInput}`}
+                              value={x.model}
+                              onChange={(e) => setModel(a, e.target.value)}
+                              placeholder={`${hint} — leave blank for any`}
+                              maxLength={80}
+                            />
                           </div>
-                          <div className={styles.surfacePills}>
-                            {pill("Anywhere", x.surfaces.length === 0, () => setSurface(x.app, null))}
-                            {surfacesOf(catalog, x.app).map((s) => pill(s, x.surfaces.includes(s), () => setSurface(x.app, s)))}
-                          </div>
+                          {x.model.trim() ? (
+                            <div className={styles.fieldRow}>
+                              <span className={styles.fieldLabel} aria-hidden="true" />
+                              <div className={styles.surfacePills} role="group" aria-label={`Is ${x.model} required for ${a}?`}>
+                                {pill("Recommended", !x.required, () => setRequired(a, false))}
+                                {pill("Required", x.required, () => setRequired(a, true))}
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
-                      );
-                    })}
-                </div>
-              ) : null}
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             <div className={styles.group}>
@@ -678,25 +697,26 @@ export function PromptEditor({
                 <span className="eyebrow">Audience</span>
                 <span className="tiny muted">Pick every team this is for.</span>
               </div>
-              <div className={styles.chips}>
+              <div className={styles.checkRows}>
                 {[
                   ...activeTeams(catalog).map((t) => t.name),
                   ...d.audiences.filter((n) => !activeTeams(catalog).some((t) => t.name === n)),
-                ].map((a) => (
-                  <Chip
-                    key={a}
-                    label={a}
-                    size="lg"
-                    selected={d.audiences.includes(a)}
-                    onClick={() =>
-                      upd({
-                        audiences: d.audiences.includes(a)
-                          ? d.audiences.filter((x) => x !== a)
-                          : [...d.audiences, a],
-                      })
-                    }
-                  />
-                ))}
+                ].map((a) => {
+                  const on = d.audiences.includes(a);
+                  return (
+                    <button
+                      key={a}
+                      type="button"
+                      className={styles.checkRow}
+                      role="checkbox"
+                      aria-checked={on}
+                      onClick={() => upd({ audiences: on ? d.audiences.filter((x) => x !== a) : [...d.audiences, a] })}
+                    >
+                      {on ? <CheckSquare weight="fill" size={18} /> : <Square size={18} className="muted" />}
+                      <span className="grow">{a}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 

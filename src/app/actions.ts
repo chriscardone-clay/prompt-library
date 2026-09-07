@@ -193,7 +193,8 @@ function normaliseDraft(input: PromptDraft, allowedFolders: string[], catalog: C
     if (!isKnownApp(catalog, name) || seen.has(name)) continue;
     seen.add(name);
     const allowed = surfacesOf(catalog, name);
-    apps.push({ app: name, surfaces: (a.surfaces ?? []).filter((s) => allowed.includes(s)) });
+    const model = String(a.model ?? "").trim().replace(/\s+/g, " ").slice(0, 80);
+    apps.push({ app: name, surfaces: (a.surfaces ?? []).filter((s) => allowed.includes(s)), model, required: !!model && !!a.required });
   }
   if (!apps.length) return { ok: false, error: "Pick at least one tool." };
 
@@ -287,7 +288,7 @@ export async function createPrompt(
   if (error) return { ok: false, error: error.message };
   const appsRes = await supabase
     .from("prompt_apps")
-    .insert(d.apps.map((a) => ({ prompt_id: id, app: a.app, surfaces: a.surfaces })));
+    .insert(d.apps.map((a) => ({ prompt_id: id, app: a.app, surfaces: a.surfaces, model: a.model, model_required: a.required })));
   if (appsRes.error) return { ok: false, error: appsRes.error.message };
 
   const editors = d.editors.filter((e) => e !== email);
@@ -344,7 +345,7 @@ export async function updatePrompt(
   if (del.error) return { ok: false, error: del.error.message };
   const ins = await supabase
     .from("prompt_apps")
-    .insert(d.apps.map((a) => ({ prompt_id: id, app: a.app, surfaces: a.surfaces })));
+    .insert(d.apps.map((a) => ({ prompt_id: id, app: a.app, surfaces: a.surfaces, model: a.model, model_required: a.required })));
   if (ins.error) return { ok: false, error: ins.error.message };
 
   // Diff editors. Only the owner may remove editors; anyone editing may add.

@@ -10,6 +10,8 @@ export interface Candidate {
   description: string;
   notes: string;
   apps: string[];
+  /** Per-app model guidance, e.g. { app: "Claude", model: "Opus 4.6", required: true }. */
+  models: { app: string; model: string; required: boolean }[];
   audiences: string[];
   updated_at: string;
 }
@@ -27,7 +29,7 @@ interface Row {
   notes: string | null;
   audiences: string[] | null;
   updated_at: string;
-  prompt_apps: { app: string }[] | null;
+  prompt_apps: { app: string; model?: string | null; model_required?: boolean | null }[] | null;
 }
 
 function toCandidate(r: Row): Candidate {
@@ -38,12 +40,13 @@ function toCandidate(r: Row): Candidate {
     description: r.description ?? "",
     notes: (r.notes ?? "").slice(0, 400),
     apps: (r.prompt_apps ?? []).map((a) => a.app),
+    models: (r.prompt_apps ?? []).filter((a) => (a.model ?? "").trim()).map((a) => ({ app: a.app, model: (a.model ?? "").trim(), required: !!a.model_required })),
     audiences: r.audiences ?? [],
     updated_at: r.updated_at,
   };
 }
 
-const SELECT = "id, title, kind, description, notes, audiences, updated_at, prompt_apps ( app )";
+const SELECT = "id, title, kind, description, notes, audiences, updated_at, prompt_apps ( app, model, model_required )";
 
 interface SearchHit {
   id: string;
@@ -156,7 +159,12 @@ export async function lexicalMatches(client: SupabaseClient, question: string, i
 export function describeCandidates(items: Candidate[]): string {
   return items
     .map((c, i) => {
-      const bits = [c.kind === "skill" ? "Skill" : "Prompt", c.apps.length ? `for ${c.apps.join(", ")}` : null, c.audiences.length ? `teams: ${c.audiences.join(", ")}` : null].filter(Boolean);
+      const bits = [
+        c.kind === "skill" ? "Skill" : "Prompt",
+        c.apps.length ? `for ${c.apps.join(", ")}` : null,
+        c.models.length ? `models: ${c.models.map((m) => `${m.app} ${m.model}${m.required ? " (required)" : " (recommended)"}`).join("; ")}` : null,
+        c.audiences.length ? `teams: ${c.audiences.join(", ")}` : null,
+      ].filter(Boolean);
       const notes = c.notes ? ` Notes: ${c.notes.replace(/\s+/g, " ").slice(0, 240)}` : "";
       return `${i + 1}. [${c.id}] ${c.title} — ${bits.join(" · ")}. ${c.description.replace(/\s+/g, " ")}${notes}`;
     })

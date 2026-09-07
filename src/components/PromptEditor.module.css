@@ -230,3 +230,83 @@
   color: var(--pom-400);
 }
 
+
+/* ── App rows (Built for) ─────────────────────────────────────────── */
+.appRows,
+.checkRows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.appRow {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--warm-line);
+  border-radius: 14px;
+  padding: 4px;
+  background: transparent;
+  transition: background 120ms var(--ease);
+}
+.appRow[data-on] {
+  background: var(--tone-surface);
+}
+.appRowHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 10px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg);
+}
+.appRowHead:hover {
+  background: var(--oat-100);
+}
+.appRowBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 10px 8px;
+}
+.fieldRow {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+.fieldLabel {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.modelInput {
+  max-width: 320px;
+  padding: 9px 12px;
+  font-size: 14px;
+}
+
+/* ── Checkbox rows (Audience) ─────────────────────────────────────── */
+.checkRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--warm-line);
+  border-radius: 14px;
+  padding: 13px 14px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg);
+  transition: background 120ms var(--ease);
+}
+.checkRow:hover,
+.checkRow[aria-checked="true"] {
+  background: var(--oat-100);
+}

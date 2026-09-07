@@ -186,7 +186,7 @@ function AppRow({
   used: number;
   surfaceUsage: Record<string, number>;
   pending: boolean;
-  onSave: (input: { originalName: string; name: string; bg: string; fg: string; install: string; archived: boolean }) => void;
+  onSave: (input: { originalName: string; name: string; bg: string; fg: string; install: string; archived: boolean; modelHint: string }) => void;
   onDelete: () => void;
   onMove: (dir: -1 | 1) => void;
   onSaveSurface: (s: { originalName?: string; name: string; install: string }) => void;
@@ -195,13 +195,14 @@ function AppRow({
   first: boolean;
   last: boolean;
 }) {
-  const [draft, setDraft] = useState({ name: app.name, bg: app.bg, fg: app.fg, install: app.install, archived: app.archived });
-  useEffect(() => setDraft({ name: app.name, bg: app.bg, fg: app.fg, install: app.install, archived: app.archived }), [app]);
+  const [draft, setDraft] = useState({ name: app.name, bg: app.bg, fg: app.fg, install: app.install, archived: app.archived, modelHint: app.modelHint });
+  useEffect(() => setDraft({ name: app.name, bg: app.bg, fg: app.fg, install: app.install, archived: app.archived, modelHint: app.modelHint }), [app]);
   const dirty =
     draft.name !== app.name ||
     draft.bg.toUpperCase() !== app.bg.toUpperCase() ||
     draft.fg.toUpperCase() !== app.fg.toUpperCase() ||
     draft.install !== app.install ||
+    draft.modelHint !== app.modelHint ||
     draft.archived !== app.archived;
   const validHex = HEX.test(draft.bg) && HEX.test(draft.fg);
 
@@ -258,6 +259,17 @@ function AppRow({
           style={{ fontSize: 13.5 }}
         />
       </label>
+      <label className="field">
+        <span className="eyebrow">Model hint</span>
+        <input
+          className="input"
+          value={draft.modelHint}
+          onChange={(e) => setDraft({ ...draft, modelHint: e.target.value })}
+          placeholder="Placeholder for the editor's Model field, e.g. “e.g. Opus 4.6”"
+          maxLength={60}
+          style={{ fontSize: 13.5, maxWidth: 420 }}
+        />
+      </label>
 
       <div className={styles.surfaces}>
         <span className="eyebrow">Surfaces</span>
@@ -301,7 +313,7 @@ function AppRow({
             type="button"
             className="btn btn-outline btn-sm on-slab"
             disabled={pending}
-            onClick={() => setDraft({ name: app.name, bg: app.bg, fg: app.fg, install: app.install, archived: app.archived })}
+            onClick={() => setDraft({ name: app.name, bg: app.bg, fg: app.fg, install: app.install, archived: app.archived, modelHint: app.modelHint })}
           >
             Discard
           </button>
@@ -383,7 +395,7 @@ function SurfaceRow({
   );
 }
 
-function NewApp({ pending, onAdd }: { pending: boolean; onAdd: (input: { name: string; bg: string; fg: string; install: string; archived: boolean }) => void }) {
+function NewApp({ pending, onAdd }: { pending: boolean; onAdd: (input: { name: string; bg: string; fg: string; install: string; archived: boolean; modelHint: string }) => void }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState({ name: "", bg: "#F4F3F0", fg: "#1B1A18", install: "" });
   const validHex = HEX.test(draft.bg) && HEX.test(draft.fg);
@@ -431,7 +443,7 @@ function NewApp({ pending, onAdd }: { pending: boolean; onAdd: (input: { name: s
           className="btn btn-primary btn-sm"
           disabled={pending || !validHex || !draft.name.trim()}
           onClick={() => {
-            onAdd({ ...draft, archived: false });
+            onAdd({ ...draft, archived: false, modelHint: "" });
             setDraft({ name: "", bg: "#F4F3F0", fg: "#1B1A18", install: "" });
             setOpen(false);
           }}

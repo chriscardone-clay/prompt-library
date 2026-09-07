@@ -15,7 +15,8 @@ export function buildReplyMessage(question: string, result: AnswerResult, siteUr
   for (const c of result.matches) {
     const url = `${site}/prompts/${c.id}`;
     const kind = c.kind === "skill" ? "Skill" : "Prompt";
-    const bits = [kind, c.apps.length ? esc(c.apps.join(", ")) : null].filter(Boolean).join(" · ");
+    const req = c.models.find((m) => m.required);
+    const bits = [kind, c.apps.length ? esc(c.apps.join(", ")) : null, req ? `requires ${esc(req.model)}` : null].filter(Boolean).join(" · ");
     const why = result.why.get(c.id);
     const lines = [`*<${url}|${esc(c.title)}>* · ${bits}`, c.description ? esc(clip(c.description, 160)) : "", why ? `_${esc(why)}_` : ""].filter(Boolean);
     blocks.push({

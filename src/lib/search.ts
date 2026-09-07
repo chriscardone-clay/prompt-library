@@ -80,7 +80,7 @@ function docFor(p: Prompt): Doc {
   return {
     title: tokens(p.title),
     desc: tokens(p.description),
-    meta: tokens([p.notes, ...p.apps.map((a) => `${a.app} ${a.surfaces.join(" ")}`), ...p.audiences].join(" ")),
+    meta: tokens([p.notes, ...p.apps.map((a) => `${a.app} ${a.surfaces.join(" ")} ${a.model}`), ...p.audiences].join(" ")),
     // Prompts: the prompt text. Skills: SKILL.md (or the first file), not every bundled file. Capped like the SQL version.
     body: tokens((p.kind === "skill" ? skillMd(p.files) || p.body : p.body).slice(0, 8000)),
   };

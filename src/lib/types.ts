@@ -21,6 +21,10 @@ export interface Person {
 export interface PromptApp {
   app: string;
   surfaces: string[];
+  /** Model to use in this app, e.g. "Opus 4.6". Empty = any. */
+  model: string;
+  /** True when the prompt only works well on `model`; false = recommended. */
+  required: boolean;
 }
 
 export interface PromptEditor {

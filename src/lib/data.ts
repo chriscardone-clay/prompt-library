@@ -33,7 +33,7 @@ interface PromptRow {
   created_at: string;
   updated_at: string;
   owner: ProfileRow | null;
-  prompt_apps: { app: string; surfaces: string[] | null }[];
+  prompt_apps: { app: string; surfaces: string[] | null; model?: string | null; model_required?: boolean | null }[];
   prompt_editors: { email: string; profile: ProfileRow | null }[];
   prompt_upvotes: { user_id: string }[];
   prompt_favorites?: { user_id: string }[];
@@ -43,7 +43,7 @@ const PROMPT_SELECT = `
   id, kind, title, description, body, notes, files, links, audiences, visibility, owner_id, parent_id,
   fork_note, last_edited_by, created_at, updated_at,
   owner:profiles!prompts_owner_id_fkey ( id, email, name, avatar_url ),
-  prompt_apps ( app, surfaces ),
+  prompt_apps ( app, surfaces, model, model_required ),
   prompt_editors ( email, profile:profiles!prompt_editors_profile_id_fkey ( id, email, name, avatar_url ) ),
   prompt_upvotes ( user_id ),
   prompt_favorites ( user_id )
@@ -74,7 +74,7 @@ function toPrompt(r: PromptRow): Prompt {
     updatedAt: r.updated_at,
     apps: (r.prompt_apps ?? [])
       .filter((a) => typeof a.app === "string" && a.app)
-      .map((a) => ({ app: a.app, surfaces: a.surfaces ?? [] })),
+      .map((a) => ({ app: a.app, surfaces: a.surfaces ?? [], model: (a.model ?? "").trim(), required: !!a.model_required && !!(a.model ?? "").trim() })),
     editors: (r.prompt_editors ?? []).map((e) =>
       e.profile ? personFromProfile(e.profile) : personFromEmail(e.email),
     ),
@@ -121,14 +121,14 @@ export const isAdmin = cache(async (): Promise<boolean> => {
 export const getCatalog = cache(async (): Promise<Catalog> => {
   const supabase = await createClient();
   const [appsRes, surfRes, teamsRes] = await Promise.all([
-    supabase.from("apps").select("name, bg, fg, install, archived, position").order("position").order("name"),
+    supabase.from("apps").select("name, bg, fg, install, archived, position, model_hint").order("position").order("name"),
     supabase.from("surfaces").select("app, name, install, position").order("position").order("name"),
     supabase.from("teams").select("name, archived, position").order("position").order("name"),
   ]);
   if (appsRes.error) throw new Error(`getCatalog apps: ${appsRes.error.message}`);
   if (surfRes.error) throw new Error(`getCatalog surfaces: ${surfRes.error.message}`);
   if (teamsRes.error) throw new Error(`getCatalog teams: ${teamsRes.error.message}`);
-  type AppRow = { name: string; bg: string; fg: string; install: string | null; archived: boolean; position: number };
+  type AppRow = { name: string; bg: string; fg: string; install: string | null; archived: boolean; position: number; model_hint: string | null };
   type SurfRow = { app: string; name: string; install: string | null; position: number };
   type TeamRow = { name: string; archived: boolean; position: number };
   const surfaces = (surfRes.data ?? []) as SurfRow[];
@@ -137,6 +137,7 @@ export const getCatalog = cache(async (): Promise<Catalog> => {
     bg: a.bg,
     fg: a.fg,
     install: a.install ?? "",
+    modelHint: a.model_hint ?? "",
     archived: a.archived,
     position: a.position,
     surfaces: surfaces

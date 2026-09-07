@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckSquare, FunnelSimple, GitFork, LockSimple, MagnifyingGlass, Square, X } from "@phosphor-icons/react";
+import { CheckSquare, Cpu, FunnelSimple, GitFork, LockSimple, MagnifyingGlass, Square, X } from "@phosphor-icons/react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -10,6 +10,7 @@ import {
   toneStyle,
   appTone,
   isKnownApp,
+  REQUIRED_TONE,
   isKnownTeam,
   surfacesOf,
   type Catalog,
@@ -468,6 +469,7 @@ function PromptCard({ prompt: p, forks, meId, catalog }: { prompt: Prompt; forks
   parts.push(`updated ${ago(p.updatedAt)}`);
   if (forks) parts.push(plural(forks, "fork"));
   const meta = parts.join(" · ");
+  const required = p.apps.find((a) => a.required && a.model);
 
   return (
     <article className={styles.card}>
@@ -479,6 +481,16 @@ function PromptCard({ prompt: p, forks, meId, catalog }: { prompt: Prompt; forks
         {p.apps.length > 2 ? (
           <span className="tag tag-light tag-muted" title={p.apps.slice(2).map((a) => a.app).join(", ")}>
             +{p.apps.length - 2}
+          </span>
+        ) : null}
+        {required ? (
+          <span
+            className="tag tone"
+            style={toneStyle(REQUIRED_TONE)}
+            title={p.apps.filter((a) => a.required && a.model).map((a) => `Requires ${a.app} ${a.model}`).join(" · ")}
+          >
+            <Cpu weight="bold" size={11} />
+            {required.model}
           </span>
         ) : null}
         <div className="grow" />

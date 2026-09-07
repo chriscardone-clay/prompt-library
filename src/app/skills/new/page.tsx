@@ -29,7 +29,7 @@ export default async function NewSkillPage() {
           notes: "",
           files: [{ name: "SKILL.md", content: SKILL_TEMPLATE }],
           links: [],
-          apps: activeApps(catalog).slice(0, 1).map((a) => ({ app: a.name, surfaces: [] })),
+          apps: activeApps(catalog).slice(0, 1).map((a) => ({ app: a.name, surfaces: [], model: "", required: false })),
           audiences: activeTeams(catalog).slice(0, 1).map((t) => t.name),
           visibility: "public",
           forkNote: "",

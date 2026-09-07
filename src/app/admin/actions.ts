@@ -41,6 +41,8 @@ export interface AppInput {
   fg: string;
   install: string;
   archived: boolean;
+  /** Placeholder for the editor's model field, e.g. "e.g. Opus 4.6". */
+  modelHint?: string;
 }
 
 export async function saveApp(input: AppInput): Promise<ActionResult> {
@@ -50,7 +52,7 @@ export async function saveApp(input: AppInput): Promise<ActionResult> {
   if (!name) return { ok: false, error: `App name must be 1–${NAME_MAX} characters.` };
   if (!HEX.test(input.bg) || !HEX.test(input.fg)) return { ok: false, error: "Colours must be hex like #FFF3ED." };
   const install = String(input.install ?? "").trim().slice(0, INSTALL_MAX);
-  const row = { name, bg: input.bg.toUpperCase(), fg: input.fg.toUpperCase(), install, archived: !!input.archived };
+  const row = { name, bg: input.bg.toUpperCase(), fg: input.fg.toUpperCase(), install, archived: !!input.archived, model_hint: String(input.modelHint ?? "").trim().slice(0, 60) };
 
   if (input.originalName && input.originalName !== name) {
     const { error: e } = await supabase.from("apps").update(row).eq("name", input.originalName);

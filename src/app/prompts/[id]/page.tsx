@@ -13,8 +13,8 @@ import { PromptNotes } from "@/components/PromptNotes";
 import { SkillFiles } from "@/components/SkillFiles";
 import { SkillInstall } from "@/components/SkillInstall";
 import { SkillLinks } from "@/components/SkillLinks";
-import { AppTag, AudienceTag, PrivateTag, SkillTag } from "@/components/Tag";
-import { appTone } from "@/lib/catalog";
+import { AppTag, AudienceTag, PrivateTag, SkillTag, appLabel } from "@/components/Tag";
+import { appTone, REQUIRED_TONE, toneStyle } from "@/lib/catalog";
 import { skillSlug } from "@/lib/skills";
 import { shouldNudgeToSlack } from "@/lib/slackNudge";
 import { ToastFromQuery } from "@/components/Toast";
@@ -150,6 +150,30 @@ export default async function PromptPage({ params }: { params: Params }) {
           </div>
 
           <aside className={styles.side}>
+            {prompt.apps.some((a) => a.model) ? (
+              <div className="slab" style={{ gap: 14 }}>
+                <div className="section-title">Model</div>
+                <div className={styles.modelList}>
+                  {prompt.apps
+                    .filter((a) => a.model)
+                    .map((a) => (
+                      <div key={a.app} className={styles.modelCard}>
+                        <div className={styles.modelHead}>
+                          <span className={styles.modelName}>{a.model}</span>
+                          {a.required ? (
+                            <span className="tag tone" style={toneStyle(REQUIRED_TONE)}>
+                              Required
+                            </span>
+                          ) : (
+                            <span className="tag tag-muted">Recommended</span>
+                          )}
+                        </div>
+                        <span className={styles.modelApp}>{appLabel(a)}</span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            ) : null}
             <VariantsTree nodes={nodes} currentId={prompt.id} noun={prompt.kind} />
 
             <div className="slab" style={{ gap: 12 }}>

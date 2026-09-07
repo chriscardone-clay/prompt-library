@@ -17,6 +17,8 @@ export interface CatalogApp {
   bg: string;
   fg: string;
   install: string;
+  /** Placeholder for the editor's model field, e.g. "e.g. Opus 4.6". */
+  modelHint: string;
   archived: boolean;
   position: number;
   surfaces: CatalogSurface[];
@@ -37,6 +39,8 @@ export const EMPTY_CATALOG: Catalog = { apps: [], teams: [] };
 
 /** Oat-200 slab + ink: what an unknown or archived-and-removed app falls back to. */
 export const FALLBACK_TONE = { bg: "#F4F3F0", fg: "#1B1A18" };
+/** Tint + ink for "Required model" badges (tangerine 100 / 400). */
+export const REQUIRED_TONE = { bg: "#FFF3ED", fg: "#B53D0A" };
 
 export interface Tone {
   bg: string;
