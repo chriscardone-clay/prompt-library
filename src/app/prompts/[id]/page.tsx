@@ -144,7 +144,10 @@ export default async function PromptPage({ params }: { params: Params }) {
                 {prompt.files.length ? <SkillInstall apps={prompt.apps} catalog={catalog} /> : null}
               </>
             ) : (
-              <PromptBody promptId={prompt.id} body={prompt.body} />
+              <>
+                <SkillLinks links={prompt.links} kind="prompt" />
+                <PromptBody promptId={prompt.id} body={prompt.body} />
+              </>
             )}
             <PromptNotes notes={prompt.notes} />
           </div>

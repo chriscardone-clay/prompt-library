@@ -97,6 +97,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * ids) a binary file may point into: the prompt itself, and for forks the
  * parent it was copied from.
  */
+const hasLinkInput = (input: PromptDraft) => (input.links ?? []).some((l) => String(l?.url ?? "").trim());
+
 function normaliseDraft(input: PromptDraft, allowedFolders: string[], catalog: Catalog): ActionResult<PromptDraft> {
   const kind = input.kind === "skill" ? "skill" : "prompt";
   const title = (input.title ?? "").trim();
@@ -105,9 +107,9 @@ function normaliseDraft(input: PromptDraft, allowedFolders: string[], catalog: C
   if (title.length > 200) return { ok: false, error: "Title is too long (200 characters max)." };
   if (description.length > 600) return { ok: false, error: "Description is too long." };
 
-  // Skill files and links. Prompts carry neither.
+  // Files belong to skills only. Links (where the item lives or is saved: a Granola
+  // recipe, a Claude project, a custom GPT) are allowed on prompts and skills alike.
   let files: SkillFile[] = [];
-  let links: SkillLink[] = [];
   if (kind === "skill") {
     const seenNames = new Set<string>();
     let textBytes = 0;
@@ -157,27 +159,29 @@ function normaliseDraft(input: PromptDraft, allowedFolders: string[], catalog: C
       return { ok: false, error: `The skill totals ${formatBytes(totalBytes)}; the limit is ${formatBytes(MAX_SKILL_BYTES)}.` };
     }
 
-    for (const l of input.links ?? []) {
-      const url = String(l?.url ?? "").trim();
-      if (!url) continue;
-      let parsed: URL;
-      try {
-        parsed = new URL(url);
-      } catch {
-        return { ok: false, error: `"${url}" isn't a valid link.` };
-      }
-      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-        return { ok: false, error: "Links must start with http:// or https://." };
-      }
-      const label = String(l?.label ?? "").trim().slice(0, 120) || linkHost(url);
-      links.push({ label, url });
-    }
-    if (links.length > MAX_LINKS) return { ok: false, error: `A skill can hold up to ${MAX_LINKS} links.` };
-    if (!files.length && !links.length) return { ok: false, error: "Add at least one file or link." };
+    if (!files.length && !hasLinkInput(input)) return { ok: false, error: "Add at least one file or link." };
   } else {
     files = [];
-    links = [];
   }
+
+  const links: SkillLink[] = [];
+  for (const l of input.links ?? []) {
+    const url = String(l?.url ?? "").trim();
+    if (!url) continue;
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return { ok: false, error: `"${url}" isn't a valid link.` };
+    }
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return { ok: false, error: "Links must start with http:// or https://." };
+    }
+    const label = String(l?.label ?? "").trim().slice(0, 120) || linkHost(url);
+    links.push({ label, url });
+  }
+  if (links.length > MAX_LINKS) return { ok: false, error: `Up to ${MAX_LINKS} links per ${kind}.` };
+  if (kind === "skill" && !files.length && !links.length) return { ok: false, error: "Add at least one file or link." };
 
   // For skills the body mirrors SKILL.md so search and history work unchanged.
   const body = kind === "skill" ? skillMd(files) : (input.body ?? "").replace(/\r\n/g, "\n");

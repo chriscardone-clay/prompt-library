@@ -362,8 +362,10 @@ export function PromptEditor({
   const needsRoute = isSkill && route === "";
   const showRouteSwitch = isSkill && route !== "" && route !== "existing";
   const showFiles = isSkill && (route !== "link" || d.files.length > 0);
-  const showLinks = isSkill && (route === "link" || d.links.length > 0);
-  const showAddOther = isSkill && route !== "" && ((route === "link" && !d.files.length) || (route !== "link" && !d.links.length));
+  // Links are optional on both kinds: where a skill lives, or where a prompt is saved
+  // (a Granola recipe, a Claude project) so people can open it instead of pasting.
+  const showLinks = route === "link" || d.links.length > 0;
+  const showAddOther = route !== "" && ((route === "link" && !d.files.length) || (route !== "link" && !d.links.length));
   const filesRequired = isSkill && route !== "link" && !hasUrl;
   const linksRequired = isSkill && route === "link" && !d.files.length;
   const addOther = () => {
@@ -533,7 +535,9 @@ export function PromptEditor({
         <div className={styles.labelRow}>
           <span className="eyebrow">Links</span>
           {linksRequired ? <Req /> : null}
-          <span className={styles.example}>Where it lives: a Claude project, a custom GPT, a Town agent</span>
+          <span className={styles.example}>
+            {isSkill ? "Where it lives: a Claude project, a custom GPT, a Town agent" : "Where it's saved: a Granola recipe, a Claude project, a custom GPT"}
+          </span>
         </div>
         <span className="tiny muted">{d.links.length ? `${d.links.length} link${d.links.length === 1 ? "" : "s"}` : "Optional"}</span>
       </div>
@@ -544,14 +548,14 @@ export function PromptEditor({
               className={`input ${skillStyles.linkLabelInput}`}
               value={l.label}
               onChange={(e) => setLink(i, { label: e.target.value })}
-              placeholder="Label, e.g. Claude project"
+              placeholder={isSkill ? "Label, e.g. Claude project" : "Label, e.g. Granola recipe"}
               aria-label="Link label"
             />
             <input
               className={`input ${skillStyles.linkUrlInput}`}
               value={l.url}
               onChange={(e) => setLink(i, { url: e.target.value })}
-              placeholder="https://claude.ai/project/..."
+              placeholder={isSkill ? "https://claude.ai/project/..." : "https://notes.granola.ai/..."}
               inputMode="url"
               aria-label="Link URL"
             />
@@ -714,8 +718,8 @@ export function PromptEditor({
           ) : null}
 
           {showFiles ? filesBlock : null}
-          {showLinks ? linksBlock : null}
-          {showAddOther ? (
+          {isSkill && showLinks ? linksBlock : null}
+          {isSkill && showAddOther ? (
             <button type="button" className={styles.addOther} onClick={addOther}>
               <Plus weight="bold" size={13} />
               {route === "link" ? "Add files as well" : "Add a link as well"}
@@ -754,6 +758,13 @@ export function PromptEditor({
                 ))}
               </div>
             </div>
+          ) : null}
+          {!isSkill && showLinks ? linksBlock : null}
+          {!isSkill && showAddOther ? (
+            <button type="button" className={styles.addOther} onClick={addOther}>
+              <Plus weight="bold" size={13} />
+              Add a link to where it's saved (a Granola recipe, a Claude project)
+            </button>
           ) : null}
 
           <label className="field">
