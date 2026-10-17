@@ -9,7 +9,7 @@ import { decideAuthorization } from "../actions";
 import styles from "../oauth.module.css";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Connect to Claude" };
+export const metadata: Metadata = { title: "Connect an AI assistant" };
 
 const FIELDS = ["client_id", "redirect_uri", "response_type", "code_challenge", "code_challenge_method", "state", "scope"] as const;
 
@@ -45,11 +45,12 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
             <ul className={styles.list}>
               <li>Search and read every public prompt and skill, plus private ones you own or edit.</li>
               <li>See your favorites and what you've created, to recommend what you're missing.</li>
-              <li>Read only: it can't create, edit, upvote or delete anything.</li>
+              <li>Save new prompts and skills under your name when you ask it to (it shows you a preview first).</li>
+              <li>It can't edit, upvote or delete anything that already exists.</li>
             </ul>
             <div className="small muted">
               Signed in as <strong>{user.email}</strong>. You'll return to <strong>{linkHost(parsed.req.redirectUri)}</strong>. You can
-              disconnect any time from Connect to Claude in your account menu.
+              disconnect any time from Connect to Claude or ChatGPT in your account menu.
             </div>
             <form action={decideAuthorization} className={styles.actions}>
               {FIELDS.map((f) => (params[f] ? <input key={f} type="hidden" name={f} value={params[f]} /> : null))}

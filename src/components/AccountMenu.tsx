@@ -77,7 +77,7 @@ export function AccountMenu({ user }: { user: Profile }) {
           <div className={styles.divider} />
           <Link href="/connect" className={styles.item} role="menuitem" onClick={() => setOpen(false)}>
             <Plugs size={16} className="muted" />
-            Connect to Claude
+            Connect to Claude or ChatGPT
           </Link>
           <form action={signOut}>
             <button type="submit" className={styles.item} role="menuitem">

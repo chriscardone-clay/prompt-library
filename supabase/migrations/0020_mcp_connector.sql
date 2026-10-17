@@ -1,19 +1,30 @@
 -- MCP connector: people connect Claude (claude.ai, Claude Desktop, Claude Code)
--- to the library at /api/mcp. The app is its own small OAuth 2.1 authorization
--- server: clients register themselves (RFC 7591), the person approves on
--- /oauth/authorize while signed in with their clay.com Google account, and the
--- client exchanges the code (PKCE, S256 only) for an access + refresh token.
+-- or ChatGPT to the library at /api/mcp. The app is its own small OAuth 2.1
+-- authorization server: the person approves on /oauth/authorize while signed
+-- in with their clay.com Google account, and the client exchanges the code
+-- (PKCE, S256 only) for an access + refresh token.
+--
+-- Clients either register themselves (RFC 7591, Claude) or identify with a
+-- Client ID Metadata Document: an https URL as client_id whose JSON lists the
+-- redirect URIs (ChatGPT's recommended method). Those documents are cached
+-- here too, keyed by the URL, and re-fetched daily.
+--
+-- Scopes: library:read (search, read, recommend) and library:write (create
+-- prompts and skills the person asks Claude/ChatGPT to save, as them).
 --
 -- Codes and tokens are stored as SHA-256 hashes, never in the clear. All
 -- writes go through the service role from the app's route handlers; signed-in
--- people may only see and revoke their own grants (the "Connect to Claude"
--- page lists them).
+-- people may only see and revoke their own grants (the /connect page lists
+-- them).
 
 create table public.mcp_clients (
   client_id      text primary key,
   client_name    text not null default '' check (length(client_name) <= 200),
   redirect_uris  text[] not null check (coalesce(array_length(redirect_uris, 1), 0) between 1 and 10),
-  created_at     timestamptz not null default now()
+  -- 'registered' (dynamic registration) or 'metadata' (client_id is a metadata document URL)
+  source         text not null default 'registered' check (source in ('registered', 'metadata')),
+  created_at     timestamptz not null default now(),
+  fetched_at     timestamptz
 );
 
 create table public.mcp_auth_codes (

@@ -54,3 +54,7 @@
 .grant:first-child {
   border-top: 0;
 }
+
+.wide {
+  grid-column: 1 / -1;
+}

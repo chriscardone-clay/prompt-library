@@ -11,7 +11,11 @@ import { ALLOWED_EMAIL_DOMAIN } from "@/lib/constants";
  * anything else.
  */
 
-export const MCP_SCOPE = "library:read";
+export const READ_SCOPE = "library:read";
+export const WRITE_SCOPE = "library:write";
+/** Every grant gets both; the consent screen says so. Kept as scopes so a read-only grant stays possible. */
+export const MCP_SCOPE = `${READ_SCOPE} ${WRITE_SCOPE}`;
+const SCOPES = [READ_SCOPE, WRITE_SCOPE];
 const CODE_TTL_S = 5 * 60;
 const ACCESS_TTL_S = 60 * 60;
 const REFRESH_TTL_S = 30 * 24 * 60 * 60;
@@ -44,7 +48,8 @@ export function oauthMetadata(origin: string) {
     grant_types_supported: ["authorization_code", "refresh_token"],
     code_challenge_methods_supported: ["S256"],
     token_endpoint_auth_methods_supported: ["none"],
-    scopes_supported: [MCP_SCOPE],
+    client_id_metadata_document_supported: true,
+    scopes_supported: SCOPES,
   };
 }
 
@@ -52,7 +57,7 @@ export function protectedResourceMetadata(origin: string) {
   return {
     resource: `${origin}/api/mcp`,
     authorization_servers: [origin],
-    scopes_supported: [MCP_SCOPE],
+    scopes_supported: SCOPES,
     bearer_methods_supported: ["header"],
     resource_name: "Clay prompt library",
   };
@@ -105,12 +110,76 @@ export interface McpClient {
   redirectUris: string[];
 }
 
+const METADATA_TTL_MS = 24 * 60 * 60 * 1000;
+const METADATA_MAX_BYTES = 64 * 1024;
+
+/** A client_id that is itself the URL of its metadata document (CIMD). */
+export function isMetadataClientId(clientId: string): boolean {
+  try {
+    const u = new URL(clientId);
+    return u.protocol === "https:" && u.pathname.length > 1 && !u.hash && !u.username && !u.password;
+  } catch {
+    return false;
+  }
+}
+
+/** Hosts we refuse to fetch a metadata document from (IP literals, localhost, internal names). */
+function unsafeHost(host: string): boolean {
+  const h = host.toLowerCase();
+  return h === "localhost" || h.endsWith(".localhost") || h.endsWith(".internal") || h.endsWith(".local") || !h.includes(".") || /^[\d.]+$/.test(h) || h.startsWith("[");
+}
+
+/**
+ * Fetch and check a Client ID Metadata Document: https only, public hostname,
+ * no redirects, small, and its client_id must be the URL itself.
+ */
+export async function fetchClientMetadata(clientId: string, fetchImpl: typeof fetch = fetch): Promise<{ name: string; redirectUris: string[] }> {
+  if (!isMetadataClientId(clientId) || unsafeHost(new URL(clientId).hostname)) {
+    throw new OAuthError("invalid_client", "Client metadata must be served over https from a public host.");
+  }
+  const res = await fetchImpl(clientId, { redirect: "error", headers: { accept: "application/json" }, signal: AbortSignal.timeout(5000) });
+  if (!res.ok) throw new OAuthError("invalid_client", `Client metadata returned HTTP ${res.status}.`);
+  const raw = await res.text();
+  if (raw.length > METADATA_MAX_BYTES) throw new OAuthError("invalid_client", "Client metadata is too large.");
+  let doc: Record<string, unknown>;
+  try {
+    doc = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    throw new OAuthError("invalid_client", "Client metadata isn't JSON.");
+  }
+  if (doc.client_id !== clientId) throw new OAuthError("invalid_client", "Client metadata client_id doesn't match its URL.");
+  const method = typeof doc.token_endpoint_auth_method === "string" ? doc.token_endpoint_auth_method : "none";
+  if (method !== "none") throw new OAuthError("invalid_client", "Only public clients (token_endpoint_auth_method none) are supported.");
+  const uris = Array.isArray(doc.redirect_uris) ? doc.redirect_uris.filter((u): u is string => typeof u === "string") : [];
+  if (!uris.length || uris.length > 10 || uris.some((u) => !validRedirect(u))) throw new OAuthError("invalid_client", "Client metadata has no usable redirect_uris.");
+  const name = (typeof doc.client_name === "string" ? doc.client_name : new URL(clientId).hostname).trim().slice(0, 200);
+  return { name, redirectUris: uris };
+}
+
 export async function getClient(service: SupabaseClient, clientId: string): Promise<McpClient | null> {
   if (!clientId) return null;
-  const { data } = await service.from("mcp_clients").select("client_id, client_name, redirect_uris").eq("client_id", clientId).maybeSingle();
-  if (!data) return null;
-  const r = data as { client_id: string; client_name: string; redirect_uris: string[] };
-  return { clientId: r.client_id, name: r.client_name, redirectUris: r.redirect_uris };
+  const { data } = await service.from("mcp_clients").select("client_id, client_name, redirect_uris, source, fetched_at").eq("client_id", clientId).maybeSingle();
+  const r = data as { client_id: string; client_name: string; redirect_uris: string[]; source: string; fetched_at: string | null } | null;
+  const fresh = r && (r.source !== "metadata" || (r.fetched_at && Date.now() - new Date(r.fetched_at).getTime() < METADATA_TTL_MS));
+  if (r && fresh) return { clientId: r.client_id, name: r.client_name, redirectUris: r.redirect_uris };
+  if (!isMetadataClientId(clientId)) return null;
+
+  try {
+    const meta = await fetchClientMetadata(clientId);
+    const { error } = await service.from("mcp_clients").upsert({
+      client_id: clientId,
+      client_name: meta.name,
+      redirect_uris: meta.redirectUris,
+      source: "metadata",
+      fetched_at: new Date().toISOString(),
+    });
+    if (error) throw new Error(error.message);
+    return { clientId, name: meta.name, redirectUris: meta.redirectUris };
+  } catch (err) {
+    console.warn("[oauth] client metadata fetch failed", clientId, err instanceof Error ? err.message : err);
+    // A stale cached copy beats failing the sign-in outright.
+    return r ? { clientId: r.client_id, name: r.client_name, redirectUris: r.redirect_uris } : null;
+  }
 }
 
 /** Exact match, except loopback redirects may use any port (RFC 8252 §7.3). */

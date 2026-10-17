@@ -9,7 +9,7 @@ import { createClient } from "@/lib/supabase/server";
 import styles from "./connect.module.css";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Connect to Claude" };
+export const metadata: Metadata = { title: "Connect to Claude or ChatGPT" };
 
 interface GrantRow {
   id: string;
@@ -22,7 +22,7 @@ function day(iso: string | null) {
   return iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "never";
 }
 
-/** How to add the MCP connector to Claude, and the person's connected apps. */
+/** How to add the MCP connector to Claude or ChatGPT, and the person's connected apps. */
 export default async function ConnectPage({ searchParams }: { searchParams: Promise<{ revoked?: string; error?: string }> }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -44,10 +44,10 @@ export default async function ConnectPage({ searchParams }: { searchParams: Prom
       <main className={styles.main}>
         <div className="stack gap-2">
           <div className="eyebrow">Connector</div>
-          <h1 className="display-md">Use the library from Claude</h1>
+          <h1 className="display-md">Use the library from Claude or ChatGPT</h1>
           <p className="muted">
-            Connect once and ask Claude for prompts and skills in any chat: “find me a prompt for a QBR deck”, “install the Clay formulas skill”, or
-            “what prompts and skills am I missing out on?”, which Claude answers from what it knows about your work.
+            Connect once and ask for prompts and skills in any chat: “find me a prompt for a QBR deck”, “install the Clay formulas skill”, “what prompts and
+            skills am I missing out on?”, or, at the end of a session that went well, “save this as a prompt for my team”.
           </p>
         </div>
 
@@ -77,6 +77,26 @@ export default async function ConnectPage({ searchParams }: { searchParams: Prom
             <div className="small muted">On Team and Enterprise plans an owner may need to add the connector for the organisation first.</div>
           </div>
           <div className="slab">
+            <h2 className="section-title">ChatGPT</h2>
+            <ol className={styles.steps}>
+              <li>
+                In ChatGPT, open <strong>Settings → Apps &amp; Connectors → Advanced settings</strong> and turn on <strong>Developer mode</strong>.
+              </li>
+              <li>
+                Back in <strong>Apps &amp; Connectors</strong>, choose <strong>Create</strong>. Name it <strong>Clay prompt library</strong>, paste the URL
+                above, and pick <strong>OAuth</strong> for authentication.
+              </li>
+              <li>Sign in with your @clay.com Google account and allow access, then click <strong>Create</strong>.</li>
+              <li>
+                In a chat, open <strong>+ → More</strong> and pick the app. ChatGPT asks you to confirm before it saves anything.
+              </li>
+            </ol>
+            <div className="small muted">
+              Developer mode depends on your ChatGPT plan, and workspace admins may need to enable it. On some plans ChatGPT only allows read tools, so
+              searching works but saving doesn&apos;t.
+            </div>
+          </div>
+          <div className={`slab ${styles.wide}`}>
             <h2 className="section-title">Claude Code</h2>
             <CopyField value={`claude mcp add --transport http clayprompts ${url}`} label="Claude Code command" />
             <div className="small muted">
@@ -92,10 +112,11 @@ export default async function ConnectPage({ searchParams }: { searchParams: Prom
             <li>“Is there a prompt for recapping a customer call into Slack?”</li>
             <li>“Get the account research prompt and fill it in for Acme.”</li>
             <li>“Show me the top skills for Claude this month.”</li>
-            <li>“What prompts and skills am I missing out on?” Claude builds a picture of your role and recurring work from its memory, then recommends what you don't use yet.</li>
+            <li>“What prompts and skills am I missing out on?” The assistant builds a picture of your role and recurring work from its memory, then recommends what you don't use yet.</li>
+            <li>“That worked really well. Save it as a skill for the GTM team.” It drafts a reusable version with fill-ins, checks the details with you, shows a preview, and saves it under your name once you say yes.</li>
           </ul>
           <div className="small muted">
-            The connector is read-only. For recommendations, Claude sends a short work profile it writes itself; the library uses it for that one answer and doesn't store it.
+            It can search, read and add new items as you, but never edits or deletes existing ones. For recommendations, the assistant sends a short work profile it writes itself; the library uses it for that one answer and doesn't store it.
           </div>
         </section>
 
