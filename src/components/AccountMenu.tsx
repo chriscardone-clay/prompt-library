@@ -1,6 +1,7 @@
 "use client";
 
-import { Desktop, Moon, SignOut, Sun } from "@phosphor-icons/react";
+import { Desktop, Moon, Plugs, SignOut, Sun } from "@phosphor-icons/react";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { signOut } from "@/app/actions";
 import { type ThemePref, useTheme } from "@/lib/theme";
@@ -74,6 +75,10 @@ export function AccountMenu({ user }: { user: Profile }) {
             ))}
           </div>
           <div className={styles.divider} />
+          <Link href="/connect" className={styles.item} role="menuitem" onClick={() => setOpen(false)}>
+            <Plugs size={16} className="muted" />
+            Connect to Claude
+          </Link>
           <form action={signOut}>
             <button type="submit" className={styles.item} role="menuitem">
               <SignOut size={16} className="muted" />
