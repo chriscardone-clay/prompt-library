@@ -1,4 +1,5 @@
 import "server-only";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { avatarIsStale, syncSlackAvatar } from "./avatars";
@@ -15,7 +16,7 @@ interface ProfileRow {
   name: string;
   avatar_url: string | null;
 }
-interface PromptRow {
+export interface PromptRow {
   id: string;
   kind: string | null;
   title: string;
@@ -39,7 +40,7 @@ interface PromptRow {
   prompt_favorites?: { user_id: string }[];
 }
 
-const PROMPT_SELECT = `
+export const PROMPT_SELECT = `
   id, kind, title, description, body, notes, files, links, audiences, visibility, owner_id, parent_id,
   fork_note, last_edited_by, created_at, updated_at,
   owner:profiles!prompts_owner_id_fkey ( id, email, name, avatar_url ),
@@ -53,7 +54,7 @@ function toPerson(p: ProfileRow | null | undefined): Person {
   return p ? personFromProfile(p) : UNKNOWN_PERSON;
 }
 
-function toPrompt(r: PromptRow): Prompt {
+export function toPrompt(r: PromptRow): Prompt {
   return {
     id: r.id,
     kind: r.kind === "skill" ? "skill" : "prompt",
@@ -118,8 +119,10 @@ export const isAdmin = cache(async (): Promise<boolean> => {
 });
 
 // ── Catalog (apps, surfaces, teams) ─────────────────────────────────
-export const getCatalog = cache(async (): Promise<Catalog> => {
-  const supabase = await createClient();
+export const getCatalog = cache(async (): Promise<Catalog> => loadCatalog(await createClient()));
+
+/** The catalog read through any client (the MCP connector uses the service client). */
+export async function loadCatalog(supabase: SupabaseClient): Promise<Catalog> {
   const [appsRes, surfRes, teamsRes] = await Promise.all([
     supabase.from("apps").select("name, bg, fg, install, archived, position, model_hint").order("position").order("name"),
     supabase.from("surfaces").select("app, name, install, position").order("position").order("name"),
@@ -150,7 +153,7 @@ export const getCatalog = cache(async (): Promise<Catalog> => {
     position: t.position,
   }));
   return { apps, teams };
-});
+}
 
 /** How many items use each app / surface / team. Admin page only. */
 export async function getCatalogUsage(): Promise<{

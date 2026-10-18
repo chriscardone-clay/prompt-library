@@ -1,0 +1,20 @@
+.field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  min-width: 0;
+}
+
+.value {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+  overflow-x: auto;
+  white-space: nowrap;
+  color: var(--fg);
+}

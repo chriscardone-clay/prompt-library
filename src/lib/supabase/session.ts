@@ -4,8 +4,10 @@ import { ALLOWED_EMAIL_DOMAIN } from "@/lib/constants";
 import { cookieOptions } from "./cookies";
 import { supabaseKey, supabaseUrl } from "./env";
 
-// /api/digest authenticates itself with CRON_SECRET (see src/app/api/digest/route.ts).
-const PUBLIC_PATHS = ["/login", "/auth", "/api/digest", "/api/slack"];
+// /api/digest authenticates itself with CRON_SECRET (see src/app/api/digest/route.ts);
+// the MCP connector and its OAuth endpoints use bearer tokens (src/lib/mcp/oauth.ts).
+// /oauth/authorize is deliberately not public: it needs a signed-in Clay account.
+const PUBLIC_PATHS = ["/login", "/auth", "/api/digest", "/api/slack", "/api/mcp", "/api/oauth", "/.well-known"];
 
 function isPublic(pathname: string) {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));

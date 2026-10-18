@@ -32,6 +32,16 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "4mb",
     },
   },
+  async rewrites() {
+    // OAuth discovery for the MCP connector (src/app/api/oauth, src/app/api/mcp).
+    // Clients probe both the bare and the path-suffixed forms.
+    return [
+      { source: "/.well-known/oauth-authorization-server", destination: "/api/oauth/metadata" },
+      { source: "/.well-known/oauth-authorization-server/:path*", destination: "/api/oauth/metadata" },
+      { source: "/.well-known/oauth-protected-resource", destination: "/api/oauth/resource" },
+      { source: "/.well-known/oauth-protected-resource/:path*", destination: "/api/oauth/resource" },
+    ];
+  },
   async headers() {
     return [
       {
@@ -42,6 +52,11 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         ],
+      },
+      {
+        // The connector consent screen must never be framed (clickjacking).
+        source: "/oauth/:path*",
+        headers: [{ key: "Content-Security-Policy", value: "frame-ancestors 'none'" }],
       },
       {
         source: "/fonts/(.*)",
