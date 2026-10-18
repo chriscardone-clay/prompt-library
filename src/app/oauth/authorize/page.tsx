@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { ClayLogo } from "@/components/ClayLogo";
+import { mcpConnector } from "@/flags";
 import { getCurrentUser } from "@/lib/data";
 import { linkHost } from "@/lib/skills";
 import { parseAuthorize } from "@/lib/mcp/oauth";
@@ -29,12 +30,20 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
 
   const parsed = await parseAuthorize(createServiceClient(), params);
   if (!parsed.ok && "redirect" in parsed) redirect(parsed.redirect);
+  const enabled = await mcpConnector();
 
   return (
     <main className={styles.page}>
       <div className={`slab-lg ${styles.card}`}>
         <ClayLogo className={styles.logo} />
-        {parsed.ok ? (
+        {!enabled ? (
+          <>
+            <h1 className="display-sm">The connector isn&apos;t available to you yet</h1>
+            <div className="muted">
+              It&apos;s being rolled out to a few people at a time. Signed in as <strong>{user.email}</strong>.
+            </div>
+          </>
+        ) : parsed.ok ? (
           <>
             <div className="stack gap-2">
               <div className="eyebrow">Prompt library connector</div>

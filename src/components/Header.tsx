@@ -1,6 +1,7 @@
 import { Files, Heart, Plus } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { Suspense } from "react";
+import { mcpConnector } from "@/flags";
 import type { Profile } from "@/lib/types";
 import { AccountMenu } from "./AccountMenu";
 import { ClayLogo } from "./ClayLogo";
@@ -15,7 +16,8 @@ interface Props {
   slackNudge?: boolean;
 }
 
-export function Header({ user, active = null, slackNudge = false }: Props) {
+export async function Header({ user, active = null, slackNudge = false }: Props) {
+  const showConnect = await mcpConnector();
   return (
     <>
     <header className={styles.header}>
@@ -61,7 +63,7 @@ export function Header({ user, active = null, slackNudge = false }: Props) {
       <Suspense fallback={null}>
         <OpenInNewTab className={`icon-btn ${styles.openOut}`} />
       </Suspense>
-      <AccountMenu user={user} />
+      <AccountMenu user={user} showConnect={showConnect} />
     </header>
     {slackNudge ? <SlackBanner /> : null}
     </>
