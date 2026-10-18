@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { mcpConnector } from "@/flags";
 import { getCurrentUser } from "@/lib/data";
 import { issueCode, parseAuthorize } from "@/lib/mcp/oauth";
 import { createClient } from "@/lib/supabase/server";
@@ -23,7 +24,7 @@ export async function decideAuthorization(formData: FormData) {
 
   const back = new URL(parsed.req.redirectUri);
   if (parsed.req.state) back.searchParams.set("state", parsed.req.state);
-  if (formData.get("decision") !== "allow") {
+  if (formData.get("decision") !== "allow" || !(await mcpConnector())) {
     back.searchParams.set("error", "access_denied");
     back.searchParams.set("error_description", "The person declined.");
     redirect(back.toString());

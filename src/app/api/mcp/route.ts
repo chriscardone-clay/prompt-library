@@ -1,4 +1,5 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { flagFor, mcpConnector, mcpWrite } from "@/flags";
 import { CORS, originOf, preflight } from "@/lib/mcp/http";
 import { verifyAccessToken } from "@/lib/mcp/oauth";
 import { buildServer } from "@/lib/mcp/server";
@@ -32,7 +33,16 @@ async function handle(request: Request): Promise<Response> {
   const me = await verifyAccessToken(service, token);
   if (!me) return unauthorized("The token is invalid, expired or revoked.");
 
-  const server = buildServer(service, me, origin);
+  // Rolled out with Vercel Flags (src/flags.ts): people outside the rollout get a clear refusal.
+  const [enabled, canSave] = await Promise.all([flagFor(mcpConnector, me), flagFor(mcpWrite, me)]);
+  if (!enabled) {
+    return new Response(
+      JSON.stringify({ jsonrpc: "2.0", error: { code: -32001, message: "The Clay prompt library connector isn't available to you yet." }, id: null }),
+      { status: 403, headers: { ...CORS, "Content-Type": "application/json" } },
+    );
+  }
+
+  const server = buildServer(service, me, origin, { canSave });
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await server.connect(transport);
   try {

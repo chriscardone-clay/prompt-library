@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { CopyField } from "@/components/CopyField";
 import { Header } from "@/components/Header";
 import { revokeGrant } from "@/app/oauth/actions";
+import { mcpConnector } from "@/flags";
 import { getCurrentUser } from "@/lib/data";
 import { getRequestOrigin } from "@/lib/site";
 import { createClient } from "@/lib/supabase/server";
@@ -26,6 +27,7 @@ function day(iso: string | null) {
 export default async function ConnectPage({ searchParams }: { searchParams: Promise<{ revoked?: string; error?: string }> }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  if (!(await mcpConnector())) notFound();
   const { revoked, error } = await searchParams;
   const origin = await getRequestOrigin();
   const url = `${origin}/api/mcp`;
