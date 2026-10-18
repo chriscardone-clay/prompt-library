@@ -114,9 +114,10 @@ export default async function ConnectPage({ searchParams }: { searchParams: Prom
             <li>“Show me the top skills for Claude this month.”</li>
             <li>“What prompts and skills am I missing out on?” The assistant builds a picture of your role and recurring work from its memory, then recommends what you don't use yet.</li>
             <li>“That worked really well. Save it as a skill for the GTM team.” It drafts a reusable version with fill-ins, checks the details with you, shows a preview, and saves it under your name once you say yes.</li>
+            <li>“Make my call prep prompt public and add Sales as a team.” It shows exactly what will change before saving; the old version stays in history.</li>
           </ul>
           <div className="small muted">
-            It can search, read and add new items as you, but never edits or deletes existing ones. For recommendations, the assistant sends a short work profile it writes itself; the library uses it for that one answer and doesn't store it.
+            It can search, read, add new items, and edit items you own or edit, always as you; it never deletes anything. For recommendations, the assistant sends a short work profile it writes itself; the library uses it for that one answer and doesn't store it.
           </div>
         </section>
 

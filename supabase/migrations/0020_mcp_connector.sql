@@ -10,7 +10,8 @@
 -- here too, keyed by the URL, and re-fetched daily.
 --
 -- Scopes: library:read (search, read, recommend) and library:write (create
--- prompts and skills the person asks Claude/ChatGPT to save, as them).
+-- prompts and skills, and edit ones the person owns or edits, when they ask
+-- Claude/ChatGPT to, as them).
 --
 -- Codes and tokens are stored as SHA-256 hashes, never in the clear. All
 -- writes go through the service role from the app's route handlers; signed-in
@@ -74,3 +75,46 @@ create policy mcp_grants_revoke on public.mcp_grants
 grant select on public.mcp_clients to authenticated;
 grant select (id, client_id, user_id, scope, created_at, last_used_at, revoked_at) on public.mcp_grants to authenticated;
 grant update (revoked_at) on public.mcp_grants to authenticated;
+
+-- Edits made through the connector run as the service role, where auth.uid()
+-- is null, so the trigger would credit them to whoever edited last. Let the
+-- service role name the editor; signed-in users still can't (auth.uid() wins).
+-- Otherwise identical to the 0011 version.
+create or replace function public.prompts_before_update()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  content_changed boolean;
+  reparenting boolean := coalesce(current_setting('app.reparenting', true), '') = 'on';
+  editor uuid := coalesce(auth.uid(), case when auth.role() = 'service_role' then new.last_edited_by end, old.last_edited_by);
+begin
+  content_changed := new.title is distinct from old.title
+                  or new.description is distinct from old.description
+                  or new.body is distinct from old.body
+                  or new.files is distinct from old.files
+                  or new.links is distinct from old.links;
+
+  -- ownership / lineage / kind are immutable through the API
+  new.owner_id   := old.owner_id;
+  if not reparenting then
+    new.parent_id := old.parent_id;
+  end if;
+  new.created_at := old.created_at;
+  new.kind       := old.kind;
+
+  if content_changed then
+    insert into public.prompt_versions (prompt_id, title, description, body, files, links, saved_at, saved_by)
+    values (old.id, old.title, old.description, old.body, old.files, old.links, old.updated_at,
+            coalesce(old.last_edited_by, old.owner_id));
+    new.last_edited_by := editor;
+    new.updated_at := now();
+  else
+    new.last_edited_by := old.last_edited_by;
+    new.updated_at := old.updated_at;
+  end if;
+  return new;
+end;
+$$;

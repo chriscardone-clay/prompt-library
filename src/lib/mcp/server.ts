@@ -9,6 +9,7 @@ import { skillMd, skillSlug } from "@/lib/skills";
 import { browse, findItem, installNotes, type Library, loadLibrary, search, skillFiles, summarize } from "./library";
 import type { Prompt } from "@/lib/types";
 import { itemShape, prepare, previewText, saveItem } from "./create";
+import { editPreviewText, editShape, prepareEdit, saveEdit } from "./edit";
 import { itemUrl } from "./library";
 import { type McpUser, WRITE_SCOPE } from "./oauth";
 import { recommend } from "./recommend";
@@ -19,6 +20,7 @@ const INSTRUCTIONS = `Clay's internal prompt library (ClayPrompts): prompts (tex
 - Before using an item, fetch it: get_prompt returns the full prompt text (with {{fill-ins}} filled when you pass values); get_skill returns the skill's files and how to install it.
 - When the person asks what they're missing, what they should be using, or for recommendations, call recommend_for_me with a profile built from what you know about them (memory, past conversations, this chat).
 - When the person wants to save something to the library ("save this as a prompt", "make this a skill", "add this to ClayPrompts"), call start_saving first and follow its steps: draft it, confirm the details with them, preview_item, and only call create_item after they say yes.
+- When the person wants to change one of their items ("make it public", "add Sales as a team", "tighten the prompt"), fetch it, call preview_changes with only the fields that change, show them the result, and call update_item (passing based_on) only after they say yes. Only owners and editors can edit; nothing can be deleted from chat.
 - Always give the item's link so they can open, upvote or fork it. Never invent items; only recommend what the tools return.`;
 
 const kind = z.enum(["prompt", "skill"]).optional().describe("Only prompts or only skills");
@@ -102,7 +104,7 @@ ${apps}
 
 ## 5. Preview, then save
 - Call preview_item and show them the result, including any "worth fixing" notes and similar items that already exist. If one of those already does the job, suggest upvoting or forking it instead.
-- Only after they clearly say yes, call create_item with exactly what they approved. Then share the link and suggest opening it to check it, add links, or upload binary files (fonts, images), which the connector can't do.
+- Only after they clearly say yes, call create_item with exactly what they approved. Then share the link and suggest opening it to check it or upload binary files (fonts, images), which the connector can't do. If they want changes afterwards, use preview_changes and update_item.
 
 Saving as: ${l.me.name} <${l.me.email}>.`;
 }
@@ -321,7 +323,7 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
     {
       title: "Save a new prompt or skill",
       description:
-        "Saves a new prompt or skill to the Clay prompt library, owned by the connected person. Only call after start_saving and preview_item, and only once the person has explicitly approved the preview, including public vs private. Returns the item's link. It can't edit or delete existing items; that happens on the site.",
+        "Saves a new prompt or skill to the Clay prompt library, owned by the connected person. Only call after start_saving and preview_item, and only once the person has explicitly approved the preview, including public vs private. Returns the item's link. To change an existing item use preview_changes and update_item; deleting happens on the site.",
       inputSchema: itemShape,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },
@@ -338,6 +340,45 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
           ? `You already saved "${d.title}" a few minutes ago, so nothing new was created: ${url}`
           : `Saved "${d.title}" as a ${d.visibility} ${d.kind}: ${url}${p.warnings.length ? `\n\nSaved with these notes (fix them on the site if needed):\n${p.warnings.map((w) => `- ${w}`).join("\n")}` : ""}\n\nShare the link. They can open it to review it, add links or binary files, invite editors, or change anything; ${d.visibility === "public" ? "it shows up in search and next week's Slack digest" : "only they and editors can see it until they make it public"}.`,
       );
+    },
+  );
+
+  server.registerTool(
+    "preview_changes",
+    {
+      title: "Preview changes to a prompt or skill",
+      description:
+        "Check an edit to an existing item before saving it: pass the id and only the fields that change (body is the full new text, not a diff; apps, teams and links replace the whole list; skill files are added or replaced by name). Returns what would change, problems to fix, and a based_on value. Only the owner and editors can edit; only the owner can remove editors. Saves nothing. Show the result to the person and get their OK before update_item.",
+      inputSchema: editShape,
+      annotations: readOnly,
+    },
+    async (input) => {
+      const l = await library();
+      const p = prepareEdit(l, input);
+      const body = editPreviewText(l, p);
+      if (!p.ok) return { ...text(body), isError: true };
+      return text(p.changes.length ? `${body}\n\nNot saved yet. Ask the person to confirm, then call update_item with the same fields and based_on.` : body);
+    },
+  );
+
+  server.registerTool(
+    "update_item",
+    {
+      title: "Save changes to a prompt or skill",
+      description:
+        "Saves an edit to an existing prompt or skill the person owns or edits. Only call after preview_changes, once the person has explicitly approved the changes; pass the same fields plus based_on from the preview. The previous version is kept in the item's version history.",
+      inputSchema: editShape,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async (input) => {
+      if (!canWrite) return reconnect();
+      const l = await library();
+      const p = prepareEdit(l, input);
+      if (!p.ok) return { ...text(editPreviewText(l, p)), isError: true };
+      if (!p.changes.length) return text(editPreviewText(l, p));
+      const saved = await saveEdit(service, l, p, input.based_on);
+      if (!saved.ok) return { ...text(`Not saved: ${saved.error}`), isError: true };
+      return text(`Saved changes to "${p.draft!.title}": ${l.origin}/prompts/${p.item!.id}\n${p.changes.map((c) => `- ${c}`).join("\n")}${p.warnings.length ? `\n\nNotes:\n${p.warnings.map((w) => `- ${w}`).join("\n")}` : ""}\n\nThe previous version is in its version history on the site if they want it back.`);
     },
   );
 

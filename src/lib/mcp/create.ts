@@ -90,41 +90,46 @@ function canonical<T extends { name: string }>(list: T[], name: string): string 
   return list.find((x) => x.name.toLowerCase() === name.trim().toLowerCase())?.name ?? name.trim();
 }
 
-/** Validate a draft and gather everything worth telling the person before saving. */
-export function prepare(lib: Library, raw: ItemInput): Prepared {
-  const warnings: string[] = [];
-  const apps = activeApps(lib.catalog);
-  const teams = activeTeams(lib.catalog);
-  const input: ItemInput = {
-    ...raw,
-    apps: raw.apps.map((a) => {
-      const app = canonical(lib.catalog.apps, a.app);
-      const surfaces = lib.catalog.apps.find((x) => x.name === app)?.surfaces ?? [];
-      return { ...a, app, surfaces: (a.surfaces ?? []).map((s) => canonical(surfaces, s)) };
-    }),
-    teams: raw.teams.map((t) => canonical(lib.catalog.teams, t)),
-  };
+type AppInput = ItemInput["apps"][number];
 
-  for (const a of input.apps) {
-    if (!isKnownApp(lib.catalog, a.app)) warnings.push(`"${a.app}" isn't an app in the library and will be dropped. Apps: ${apps.map((x) => x.name).join(", ")}.`);
+/** Fix casing against the catalog and say which apps, surfaces or teams don't exist (they get dropped). */
+export function checkCatalog(lib: Library, rawApps: AppInput[] | undefined, rawTeams: string[] | undefined) {
+  const warnings: string[] = [];
+  const apps = rawApps?.map((a) => {
+    const app = canonical(lib.catalog.apps, a.app);
+    const surfaces = lib.catalog.apps.find((x) => x.name === app)?.surfaces ?? [];
+    return { ...a, app, surfaces: (a.surfaces ?? []).map((s) => canonical(surfaces, s)) };
+  });
+  const teams = rawTeams?.map((t) => canonical(lib.catalog.teams, t));
+  for (const a of apps ?? []) {
+    if (!isKnownApp(lib.catalog, a.app)) warnings.push(`"${a.app}" isn't an app in the library and will be dropped. Apps: ${activeApps(lib.catalog).map((x) => x.name).join(", ")}.`);
     else {
       const known = lib.catalog.apps.find((x) => x.name === a.app)!.surfaces.map((s) => s.name);
       const bad = (a.surfaces ?? []).filter((s) => !known.includes(s));
       if (bad.length) warnings.push(`${a.app} has no surface ${bad.map((s) => `"${s}"`).join(", ")} (dropped). Its surfaces: ${known.join(", ") || "none"}.`);
     }
   }
-  for (const t of input.teams) {
-    if (!isKnownTeam(lib.catalog, t)) warnings.push(`"${t}" isn't a team in the library and will be dropped. Teams: ${teams.map((x) => x.name).join(", ")}.`);
+  for (const t of teams ?? []) {
+    if (!isKnownTeam(lib.catalog, t)) warnings.push(`"${t}" isn't a team in the library and will be dropped. Teams: ${activeTeams(lib.catalog).map((x) => x.name).join(", ")}.`);
   }
+  return { apps, teams, warnings };
+}
 
-  const draft = toDraft(input);
-  const v = normaliseDraft(draft, [], lib.catalog);
-  if (!v.ok) {
-    const hint = /tool/.test(v.error) ? ` Apps: ${apps.map((x) => x.name).join(", ")}.` : /team/.test(v.error) ? ` Teams: ${teams.map((x) => x.name).join(", ")}.` : "";
-    return { ok: false, error: v.error.replace("Pick at least one tool.", "Pick at least one app it works in.") + hint, warnings, similar: [] };
-  }
-  const d = v.data;
+/** The editor's validation, with its error phrased for chat and the valid names attached. */
+export function validate(lib: Library, draft: PromptDraft, folders: string[]) {
+  const v = normaliseDraft(draft, folders, lib.catalog);
+  if (v.ok) return v;
+  const hint = /tool/.test(v.error)
+    ? ` Apps: ${activeApps(lib.catalog).map((x) => x.name).join(", ")}.`
+    : /team/.test(v.error)
+      ? ` Teams: ${activeTeams(lib.catalog).map((x) => x.name).join(", ")}.`
+      : "";
+  return { ok: false as const, error: v.error.replace("Pick at least one tool.", "Pick at least one app it works in.") + hint };
+}
 
+/** Quality notes worth raising before saving: missing description, leftover specifics, SKILL.md without frontmatter. */
+export function qualityNotes(d: PromptDraft): string[] {
+  const warnings: string[] = [];
   if (!d.description) warnings.push("No description yet. One sentence on what it produces helps people find it.");
   if (d.kind === "prompt" && !parsePlaceholders(d.body).length && d.body.length > 200) {
     warnings.push("No {{placeholders}}. If the text still names a specific customer, person or deal from this session, swap those for {{company}}-style fill-ins so others can reuse it.");
@@ -136,8 +141,21 @@ export function prepare(lib: Library, raw: ItemInput): Prepared {
       warnings.push(`SKILL.md has no frontmatter description, which is how tools decide when to use the skill. Start it like:\n${SKILL_TEMPLATE.split("\n").slice(0, 4).join("\n")}`);
     }
   }
+  return warnings;
+}
 
-  const similar = searchPrompts(lib.items, `${d.title} ${d.description}`, apps.map((a) => a.name))
+/** Validate a draft and gather everything worth telling the person before saving. */
+export function prepare(lib: Library, raw: ItemInput): Prepared {
+  const checked = checkCatalog(lib, raw.apps, raw.teams);
+  const warnings = checked.warnings;
+  const input: ItemInput = { ...raw, apps: checked.apps!, teams: checked.teams! };
+
+  const v = validate(lib, toDraft(input), []);
+  if (!v.ok) return { ok: false, error: v.error, warnings, similar: [] };
+  const d = v.data;
+  warnings.push(...qualityNotes(d));
+
+  const similar = searchPrompts(lib.items, `${d.title} ${d.description}`, lib.catalog.apps.map((a) => a.name))
     .filter((h) => h.score >= 0.9)
     .slice(0, 3)
     .map((h) => {
