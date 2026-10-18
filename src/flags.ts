@@ -13,8 +13,9 @@ import { createClient } from "@/lib/supabase/server";
  * and `user.email` (use it for named people and segments).
  *
  * Defaults: on a Vercel deployment a flag is off until the dashboard says
- * otherwise (and if Vercel Flags can't be reached), so declaring a flag here
- * never ships the feature by itself. Off Vercel (local dev, no Flags
+ * otherwise, so declaring a flag here never ships the feature by itself. (If
+ * Vercel Flags can't be reached, the definitions bundled at build time
+ * apply, then this default.) Off Vercel (local dev, no Flags
  * credentials) flags default on so you can work on the feature; list keys in
  * FLAGS_LOCAL_OFF to see their off state, or `vercel env pull` to test real
  * targeting locally.
