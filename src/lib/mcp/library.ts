@@ -22,11 +22,13 @@ export interface Library {
 }
 
 export async function loadLibrary(service: SupabaseClient, me: McpUser, origin: string): Promise<Library> {
-  const { data: edits } = await service
-    .from("prompt_editors")
-    .select("prompt_id")
-    .or(`profile_id.eq.${me.id},email.eq."${me.email}"`);
-  const editable = ((edits ?? []) as { prompt_id: string }[]).map((e) => e.prompt_id);
+  // Linked editor rows match by profile id; the email only claims invites no one has linked yet.
+  // Two plain filters rather than an .or() string, so nothing from the profile is parsed as filter syntax.
+  const [linked, pending] = await Promise.all([
+    service.from("prompt_editors").select("prompt_id").eq("profile_id", me.id),
+    service.from("prompt_editors").select("prompt_id").eq("email", me.email).is("profile_id", null),
+  ]);
+  const editable = [...new Set([...(linked.data ?? []), ...(pending.data ?? [])].map((e) => (e as { prompt_id: string }).prompt_id))];
   const scope = [`visibility.eq.public`, `owner_id.eq.${me.id}`, ...(editable.length ? [`id.in.(${editable.join(",")})`] : [])];
 
   const [res, catalog] = await Promise.all([
@@ -36,6 +38,11 @@ export async function loadLibrary(service: SupabaseClient, me: McpUser, origin: 
   if (res.error) throw new Error(`loadLibrary: ${res.error.message}`);
   const items = ((res.data ?? []) as unknown as PromptRow[]).map(toPrompt);
   return { items, catalog, me, origin };
+}
+
+/** An editor row counts by its linked profile id; an unlinked invite counts by email. */
+export function isEditor(p: Prompt, me: Pick<McpUser, "id" | "email">): boolean {
+  return p.editors.some((e) => (e.id ? e.id === me.id : e.email === me.email));
 }
 
 export function itemUrl(lib: Library, p: Prompt): string {
@@ -49,7 +56,7 @@ export function popularity(p: Prompt): number {
 export function relationTo(lib: Library, p: Prompt): string[] {
   const out: string[] = [];
   if (p.ownerId === lib.me.id) out.push("you created it");
-  else if (p.editors.some((e) => e.id === lib.me.id || e.email === lib.me.email)) out.push("you're an editor");
+  else if (isEditor(p, lib.me)) out.push("you're an editor");
   if (p.favoritedBy.includes(lib.me.id)) out.push("in your favorites");
   if (p.upvoteUserIds.includes(lib.me.id)) out.push("you upvoted it");
   return out;

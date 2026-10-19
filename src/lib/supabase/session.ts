@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { ALLOWED_EMAIL_DOMAIN } from "@/lib/constants";
+import { safeNextPath } from "@/lib/redirect";
 import { cookieOptions } from "./cookies";
 import { supabaseKey, supabaseUrl } from "./env";
 
@@ -55,8 +56,7 @@ export async function updateSession(request: NextRequest) {
 
   if (allowed && pathname === "/login") {
     // Already signed in: continue to the requested page (e.g. the embed hand-off).
-    const next = request.nextUrl.searchParams.get("next") ?? "/";
-    const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/";
+    const safeNext = safeNextPath(request.nextUrl.searchParams.get("next"));
     return NextResponse.redirect(new URL(safeNext, request.nextUrl.origin));
   }
 
