@@ -405,7 +405,7 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
       const l = await library();
       const w = which ?? "both";
       const fav = l.items.filter((p) => p.favoritedBy.includes(me.id));
-      const mine = l.items.filter((p) => p.ownerId === me.id || p.editors.some((e) => e.id === me.id || e.email === me.email));
+      const mine = l.items.filter((p) => isMine(l, p));
       const sections: string[] = [];
       if (w !== "created") sections.push(`## Favorites (${fav.length})\n\n${fav.map((p) => summarize(l, p)).join("\n\n") || "None yet."}`);
       if (w !== "favorites") sections.push(`## Created or editing (${mine.length})\n\n${mine.map((p) => summarize(l, p)).join("\n\n") || "None yet."}`);

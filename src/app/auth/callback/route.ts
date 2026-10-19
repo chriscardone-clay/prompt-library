@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { syncAvatarOnLogin } from "@/lib/avatars";
 import { ALLOWED_EMAIL_DOMAIN } from "@/lib/constants";
+import { safeNextPath } from "@/lib/redirect";
 import { getRequestOrigin } from "@/lib/site";
 import { createClient } from "@/lib/supabase/server";
 
@@ -10,8 +11,7 @@ export async function GET(request: NextRequest) {
   // Use the host the browser actually hit, not the internal request URL.
   const origin = await getRequestOrigin();
   const code = searchParams.get("code");
-  const rawNext = searchParams.get("next") ?? "/";
-  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
+  const next = safeNextPath(searchParams.get("next"));
 
   if (!code) {
     const reason = searchParams.get("error_description") || searchParams.get("error") || "oauth";
