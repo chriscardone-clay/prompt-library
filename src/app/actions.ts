@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { ALLOWED_EMAIL_DOMAIN, SKILL_BUCKET } from "@/lib/constants";
 import { getCatalog } from "@/lib/data";
 import { type ActionResult, normaliseDraft } from "@/lib/draft";
+import { safeNextPath } from "@/lib/redirect";
 import { createClient } from "@/lib/supabase/server";
 import { esc } from "@/lib/digest/blocks";
 import { getSiteUrl } from "@/lib/site";
@@ -18,8 +19,7 @@ export type { ActionResult } from "@/lib/draft";
 // ── Auth ────────────────────────────────────────────────────────────
 export async function signInWithGoogle(formData: FormData) {
   const supabase = await createClient();
-  const nextPath = String(formData.get("next") || "/");
-  const safeNext = nextPath.startsWith("/") && !nextPath.startsWith("//") ? nextPath : "/";
+  const safeNext = safeNextPath(String(formData.get("next") || "/"));
   // Return to whichever host the user started on (custom domain, vercel.app, localhost).
   const origin = await getRequestOrigin();
   const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(safeNext)}`;
