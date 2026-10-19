@@ -5,7 +5,7 @@ import { z } from "zod";
 import { isSkillMd } from "@/lib/skills";
 import type { Prompt, PromptDraft, SkillFile } from "@/lib/types";
 import { checkCatalog, itemShape, qualityNotes, validate } from "./create";
-import { findItem, type Library } from "./library";
+import { findItem, isEditor, type Library } from "./library";
 
 /**
  * Editing an existing prompt or skill from a chat ("make it public", "tighten
@@ -58,7 +58,7 @@ function fail(error: string, item?: Prompt): PreparedEdit {
 }
 
 export function canEditItem(lib: Library, p: Prompt): boolean {
-  return p.ownerId === lib.me.id || p.editors.some((e) => e.id === lib.me.id || e.email === lib.me.email);
+  return p.ownerId === lib.me.id || isEditor(p, lib.me);
 }
 
 function lower(s: string) {
