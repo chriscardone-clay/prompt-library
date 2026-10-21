@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, CheckSquare, Cpu, FunnelSimple, GitFork, LockSimple, MagnifyingGlass, Medal, ShieldCheck, Square, X } from "@phosphor-icons/react";
+import { CaretDown, Check, CheckSquare, Cpu, FunnelSimple, GitFork, LockSimple, MagnifyingGlass, Square, X } from "@phosphor-icons/react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -37,7 +37,7 @@ interface Props {
   workflowsOn?: boolean;
   /** Admins and Workflow maintainers get a link to the Integrations catalog. */
   manageIntegrations?: boolean;
-  /** ENABLEMENT_APPROVED: Recommended sort, the approved filter and the gold standards shelf. */
+  /** ENABLEMENT_APPROVED: the Recommended sort and the Enablement filter. */
   enablementOn?: boolean;
 }
 
@@ -245,15 +245,6 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prompts, kind, q, params.get("apps"), params.get("surfaces"), params.get("teams"), params.get("triggers"), params.get("integrations"), readyOnly, approvedFilter, sort, catalog]);
 
-  // Gold standards shelf: Discover's landing view only (no search, no filters).
-  const gold = useMemo(
-    () =>
-      enablementOn && view === "discover"
-        ? prompts.filter((p) => approvalRank(p.approval) === 2 && (kind === "all" || p.kind === kind)).sort(compareRecommended)
-        : [],
-    [enablementOn, view, prompts, kind],
-  );
-
   // Reference architectures vs adaptations, counted before the toggle narrows the list.
   const originCounts = isWf
     ? { all: list.length, reference: list.filter((p) => !p.parentId).length, adapted: list.filter((p) => !!p.parentId).length }
@@ -378,32 +369,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
               </button>
             ))}
           </div>
-          <div className={styles.sortGroup} role="group" aria-label="Sort">
-            <span className={`eyebrow ${styles.sortLabel}`}>Sort</span>
-            {sorts.map((s) => (
-              <button
-                key={s}
-                type="button"
-                className={styles.sortBtn}
-                aria-pressed={sort === s}
-                onClick={() => writeUrl({ sort: s })}
-              >
-                {SORT_LABELS[s]}
-              </button>
-            ))}
-          </div>
-          {enablementOn ? (
-            <button
-              type="button"
-              className={styles.filtersBtn}
-              aria-pressed={!!approvedFilter}
-              data-active={approvedFilter ? "" : undefined}
-              onClick={() => writeUrl({ approved: approvedFilter ? null : "1" })}
-            >
-              <ShieldCheck weight="bold" size={16} />
-              Enablement approved
-            </button>
-          ) : null}
+          <SortMenu sorts={sorts} sort={sort} onChange={(v) => writeUrl({ sort: v })} />
         </div>
         {originCounts ? (
           <div className={styles.activeRow}>
@@ -525,25 +491,10 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
             </div>
 
             <div className={styles.group}>
-              <span className="eyebrow">Team</span>
-              <div className={styles.optionList}>
-                {activeTeams(catalog).map(({ name: t }) => {
-                  const on = teams.includes(t);
-                  return (
-                    <button
-                      key={t}
-                      type="button"
-                      className={styles.option}
-                      role="checkbox"
-                      aria-checked={on}
-                      onClick={() => toggleTeam(t)}
-                    >
-                      {on ? <CheckSquare weight="fill" size={18} /> : <Square size={18} />}
-                      {t}
-                    </button>
-                  );
-                })}
-              </div>
+              <span className="eyebrow" id="teams-label">
+                Team
+              </span>
+              <MultiSelect labelId="teams-label" options={activeTeams(catalog).map((t) => t.name)} selected={teams} onToggle={toggleTeam} noun="teams" />
             </div>
 
             {enablementOn ? (
@@ -619,36 +570,6 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
         ) : null}
 
         <div className={styles.results}>
-          {gold.length && !hasActive && origin === "all" ? (
-            <section className={styles.shelf} aria-labelledby="gold-shelf">
-              <div className={styles.shelfHead}>
-                <span className={styles.shelfIcon} aria-hidden="true">
-                  <Medal weight="bold" size={18} />
-                </span>
-                <div className="grow">
-                  <h2 id="gold-shelf" className={styles.shelfTitle}>
-                    Gold standards
-                  </h2>
-                  <div className="small muted">Enablement&apos;s best answer for each common job. Start here.</div>
-                </div>
-                {gold.length > 3 ? (
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => writeUrl({ approved: "gold" })}>
-                    All {gold.length}
-                    <ArrowRight weight="bold" size={13} />
-                  </button>
-                ) : null}
-              </div>
-              <div className={styles.shelfRow}>
-                {gold.slice(0, 3).map((p) => (
-                  <Link key={p.id} href={`/prompts/${p.id}`} className={styles.goldCard}>
-                    <span className={styles.useCase}>{p.approval.useCase || (p.kind === "workflow" ? "Workflow" : p.kind === "skill" ? "Skill" : "Prompt")}</span>
-                    <span className={styles.goldTitle}>{p.title}</span>
-                    <span className={`${styles.cardDesc} clamp-2`}>{p.description}</span>
-                  </Link>
-                ))}
-              </div>
-            </section>
-          ) : null}
           {shown.length ? (
             <div className={styles.grid}>
               {shown.map((p) => (
@@ -864,6 +785,62 @@ function MultiSelect({ labelId, options, selected, onToggle, noun }: { labelId: 
           ) : (
             <li className={styles.msEmpty}>No {noun} match “{query}”.</li>
           )}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+const SORT_HINTS: Partial<Record<Sort, string>> = {
+  recommended: "Gold standards, then Enablement approved, then top rated",
+  top: "Most upvoted",
+  new: "Newest first",
+  updated: "Most recently changed",
+};
+
+/** One "Sort: …" button with the options in a menu, instead of a row of buttons. */
+function SortMenu({ sorts, sort, onChange }: { sorts: readonly Sort[]; sort: Sort; onChange: (s: Sort) => void }) {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  return (
+    <div ref={wrap} className={styles.sortMenu}>
+      <button type="button" className={styles.filtersBtn} aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className="muted">Sort:</span> {SORT_LABELS[sort]}
+        <CaretDown weight="bold" size={12} />
+      </button>
+      {open ? (
+        <ul className={styles.sortList} role="listbox" aria-label="Sort">
+          {sorts.map((s) => (
+            <li
+              key={s}
+              role="option"
+              aria-selected={s === sort}
+              className={styles.sortOpt}
+              onClick={() => {
+                onChange(s);
+                setOpen(false);
+              }}
+            >
+              <span className={styles.sortCheck}>{s === sort ? <Check weight="bold" size={14} /> : null}</span>
+              <span className="stack">
+                <span>{SORT_LABELS[s]}</span>
+                {SORT_HINTS[s] ? <span className="tiny muted">{SORT_HINTS[s]}</span> : null}
+              </span>
+            </li>
+          ))}
         </ul>
       ) : null}
     </div>
