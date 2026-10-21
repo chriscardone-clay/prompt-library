@@ -28,7 +28,7 @@ Enablement keeps a **gold standard** for each common job (a *use case*, e.g. "Ac
 
 ## Surfaces
 
-- Discover: badges on cards, gold standards shelf, Recommended sort, *Enablement approved* toggle and filter group (approved / gold only).
+- Discover: badges on cards, a single Sort menu with Recommended as the default, and an Enablement filter group in the Filters panel (approved / gold only). No separate gold standards shelf: it competed with the results.
 - Item page: banner under the description, *Enablement review* side panel (facts, rubric, note, built-from gold standard, history), request dialog.
 - Editor: a note when editing approved content.
 - Claude connector: `- enablement:` line on every result, `approved_only` on `search_library` / `browse_library`, `recommended` sort (default with the flag), boost in search and `recommend_for_me`, instructions to prefer approved items when they fit.
