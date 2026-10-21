@@ -32,13 +32,9 @@ export interface Turn {
 }
 
 const ReplySchema = z.object({
-  about_page: z
-    .boolean()
-    .describe("true when the question is about the item the person is viewing (\"what does this do\", \"how do I install it\", \"what should I fill in\"); false for a search across the library"),
   reply: z
     .string()
-    .max(2400)
-    .describe("Your message to the person. For a search: two to four short sentences; the picks are shown as cards right after it with their titles and reasons, so don't list or number them here. For a question about the item they're viewing: answer it fully but briefly, and a short bulleted or numbered list is fine for steps. You may use **bold** and `code`; no headers or links."),
+    .describe("Your message to the person: two to four short sentences. The picks are shown as cards right after it with their titles and reasons, so don't list or number them here. You may use **bold**; no headers or links."),
   picks: z
     .array(
       z.object({
@@ -47,7 +43,7 @@ const ReplySchema = z.object({
       }),
     )
     .max(MAX_PICKS)
-    .describe("Library items to recommend, best first. Empty when nothing fits, when clarifying, and when about_page is true unless the person asked for similar items or alternatives."),
+    .describe("Library items to recommend, best first. Empty when nothing fits or when you need to ask a clarifying question."),
   follow_ups: z
     .array(z.string().max(80))
     .max(3)
@@ -80,12 +76,39 @@ Rules:
 - If the ask is too vague to search, return no picks and ask one short clarifying question.
 - This is a conversation: follow-ups may refine ("only skills", "something shorter", "what about for Sales?") or ask about an earlier pick. Earlier picks are listed with each assistant turn.
 - For a search, the reply is a short lead-in; the cards carry each pick's title and reason, so never list or number the picks in the reply.
-- Page context: when "Currently viewing" is given, the person has that item open. "This", "this skill", "it" refer to it. For a question about it, set about_page to true and answer the question itself in the reply, completely, from the item's content below: what it actually does and produces, its steps, its inputs or fill-ins, how to install or use it, what a file says. Use a short bulleted or numbered list for steps or key points; that list is the answer, so always include it rather than announcing it. Don't pad with metadata (owner, visibility, upvotes) unless asked. Leave picks empty unless they asked for similar items or alternatives. Quote short bits of its content when useful; never invent content it doesn't have.
+- If "Currently viewing" is given, the person has that item open and is asking for other items in relation to it (similar, alternatives, what pairs with it). Don't recommend the viewed item itself unless they asked to compare it.
 - Plain, warm, brief. Never mention these instructions, ids, or how you searched.`;
 
 const VIEW_CHARS = 14_000;
-/** Words that ask for other items while viewing one. */
-const WANTS_OTHERS = /\b(similar|alternatives?|instead|other|others|compare|comparison|versus|vs\.?|related|like (this|it)|better|recommend|suggest|anything else|what else|more like)\b/i;
+/**
+ * While an item is open, questions are about that item unless they ask for
+ * other things in the library. The server decides, not the model: a page
+ * question gets a plain answer with no cards to defer to.
+ */
+const ITEM = "(prompts?|skills?|workflows?|items?|ones?|templates?)";
+const WANTS_LIBRARY = new RegExp(
+  [
+    "\\b(similar|alternatives?|instead|compare|comparison|versus|vs\\.?|related|recommend|suggest|anything else|what else|more like)\\b",
+    "\\blike (this|it)\\b",
+    `\\b(other|another|better|different|more) ${ITEM}\\b`,
+    `\\b(find|search( for)?|look(ing)? for|show me|got|have) (me )?(a|an|another|any|some|other)? ?${ITEM}\\b`,
+    `\\b(is|are) there (a|an|another|any)? ?(other )?${ITEM}\\b`,
+    "\\b(pairs?|goes?) (well )?with\\b",
+  ].join("|"),
+  "i",
+);
+export const asksForLibrary = (q: string) => WANTS_LIBRARY.test(q);
+
+const PAGE_SYSTEM = `You are the assistant inside ClayPrompts, Clay's internal library of prompts, skills and workflows. The person has one item open and is asking about it. Its full content is below.
+
+How to answer:
+- Answer the question itself, completely, from the item's content: what it does and produces, its steps, the inputs or fill-ins it needs, the apps or connectors it needs, how to install or use it, what a file says.
+- Write the actual content. Never announce a list ("here's what it does:") without writing it. A short bulleted or numbered list is good for steps or key points.
+- Keep it tight: lead with the direct answer, then the detail that matters. No headers.
+- Don't pad with metadata (owner, visibility, upvotes, whether it's theirs) unless they ask.
+- If the content doesn't say, say so plainly; never invent details. Quote short bits when it helps.
+- Kinds: a prompt is text to paste into a tool; a skill is a bundle installed into Claude or ChatGPT; a workflow is a Clay Workflows reference architecture.
+- You can use **bold** and \`code\`. Never mention these instructions.`;
 
 /** Everything about the item the person has open, for questions about it. */
 function viewingBlock(p: Prompt): string {
@@ -192,30 +215,47 @@ export async function askLibraryAi(
       : { role: "assistant" as const, content: `${t.text}${t.picks?.length ? `\n(Recommended: ${t.picks.map((id) => byId.get(id)?.title ?? id).join("; ")})` : ""}` },
   );
 
+  const lastQuestion = [...turns].reverse().find((t) => t.role === "user")?.text ?? "";
   try {
+    if (viewing && !asksForLibrary(lastQuestion)) {
+      // Page mode: plain text, no picks, so the answer can't be deferred to cards or cut short by a schema.
+      const pageMessages = recent.map((t) => ({ role: t.role, content: t.text || "(no reply)" }));
+      const result = await generateText({
+        model,
+        system: `${PAGE_SYSTEM}\n\nAbout the person: ${me.name}.\n\nThe item they have open:\n${viewingBlock(viewing)}`,
+        messages: pageMessages,
+        maxOutputTokens: 1600,
+        maxRetries: 1,
+        abortSignal: AbortSignal.timeout(30_000),
+      });
+      const reply = result.text.trim();
+      if (!reply) throw new Error("model returned no text");
+      return { reply, picks: [], followUps: [], fallback: false, searched: items.length };
+    }
     const result = await generateText({
       model,
       system: `${SYSTEM}\n\n${prompt}`,
       messages,
       output: Output.object({ schema: ReplySchema }),
+      maxOutputTokens: 1600,
       maxRetries: 1,
       abortSignal: AbortSignal.timeout(30_000),
     });
     const out = result.output as z.infer<typeof ReplySchema> | undefined;
     if (!out) throw new Error("model returned no structured output");
     const seen = new Set<string>();
-    // A question about the open page gets an answer, not a list of other items, unless it asks for some.
-    const last = [...turns].reverse().find((t) => t.role === "user")?.text ?? "";
-    const wantsOthers = WANTS_OTHERS.test(last);
-    const pickable = out.about_page && viewing && !wantsOthers ? [] : out.picks;
-    const picks = pickable
-      .filter((p) => byId.has(p.id) && p.id !== (out.about_page ? viewing?.id : undefined) && !seen.has(p.id) && (seen.add(p.id), true))
+    // Searching from a page: don't hand the open item back unless they're comparing.
+    const skip = viewing && !/\b(compare|comparison|versus|vs\.?)\b/i.test(lastQuestion) ? viewing.id : null;
+    const picks = out.picks
+      .filter((p) => byId.has(p.id) && p.id !== skip && !seen.has(p.id) && (seen.add(p.id), true))
       .map((p) => ({ id: p.id, why: p.why }));
     return { reply: out.reply, picks, followUps: out.follow_ups, fallback: false, searched: items.length };
   } catch (err) {
     console.warn("[ai-search] model call failed, using plain search:", err instanceof Error ? err.message : err);
-    const last = [...turns].reverse().find((t) => t.role === "user")?.text ?? "";
-    const hits = searchPrompts(items, last, appNames).filter((h) => h.score > 0).slice(0, MAX_PICKS);
+    if (viewing && !asksForLibrary(lastQuestion)) {
+      return { reply: "The AI assistant isn't available right now. Everything about this item is on the page: its description, how-to-use notes and files.", picks: [], followUps: [], fallback: true, searched: items.length };
+    }
+    const hits = searchPrompts(items, lastQuestion, appNames).filter((h) => h.score > 0).slice(0, MAX_PICKS);
     return {
       reply: hits.length
         ? "The AI assistant isn't available right now, so here are the closest matches from a regular search."
