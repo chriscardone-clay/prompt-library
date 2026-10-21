@@ -14,11 +14,13 @@
     "db:types": "supabase gen types typescript --local > src/lib/database.types.ts"
   },
   "dependencies": {
+    "@flags-sdk/vercel": "^1.5.2",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@phosphor-icons/react": "^2.1.10",
     "@supabase/ssr": "^0.12.6",
     "@supabase/supabase-js": "^2.115.0",
     "ai": "^7.0.93",
+    "flags": "^4.3.1",
     "github-slugger": "^2.0.0",
     "mdast-util-to-string": "^4.0.0",
     "next": "^16.3.4",

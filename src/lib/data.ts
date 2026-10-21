@@ -130,11 +130,23 @@ export const isAdmin = cache(async (): Promise<boolean> => {
   return !error && data === true;
 });
 
-/** Whether the signed-in person can see and create workflows (beta; see features.ts). */
+/**
+ * Whether the signed-in person can see and create workflows: the
+ * WORKFLOWS_BETA boolean in Vercel Flags, targeted per user (flags.ts).
+ * Admins always can. The WORKFLOWS_BETA env var (features.ts) is a fallback
+ * for local development and hosts without Vercel Flags.
+ */
 export const workflowsEnabled = cache(async (): Promise<boolean> => {
   const user = await getCurrentUser();
   if (!user) return false;
   if (workflowsAllowedByEnv(user.email)) return true;
+  try {
+    // Imported lazily: flags.ts imports this module for getCurrentUser.
+    const { workflowsBeta } = await import("./flags");
+    if (await workflowsBeta()) return true;
+  } catch (err) {
+    console.warn("[flags] WORKFLOWS_BETA unavailable:", err instanceof Error ? err.message : err);
+  }
   return isAdmin();
 });
 

@@ -1,5 +1,7 @@
 /**
- * Who can see workflows while they're in beta. WORKFLOWS_BETA is either a
+ * Fallback for the Workflows beta where Vercel Flags isn't available (local
+ * development, other hosts). In production the WORKFLOWS_BETA flag in Vercel
+ * Flags decides, per user (src/lib/flags.ts). The env var WORKFLOWS_BETA is either a
  * boolean (`true` / `1` / `on` = everyone signed in; `false` / `0` / `off` =
  * admins only) or a comma-separated list of emails (`a@clay.com`), whole
  * domains (`@clay.com`), or `*` for everyone. Admins always see them (see
