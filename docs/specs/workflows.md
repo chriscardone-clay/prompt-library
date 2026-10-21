@@ -14,11 +14,11 @@ A skill is the wrong fit. Skills get installed into an assistant, so they come w
 2. **Easy to read in the library.** Rendered Markdown with GitHub-flavoured tables, wide code blocks and a table of contents, plus a toggle to view the raw source.
 3. **Easy to submit while building.** Drop in a `.md`, and the title and description fill in from it. Two required fields, as with prompts.
 4. **Treated like every other item.** Search, filters, upvotes, feedback, forks, favorites, editors, visibility, version history, the Slack assistant, the Claude/ChatGPT connector and the weekly digest all handle workflows.
-5. **Safe to share with customers.** A pre-download check flags internal specifics before a file leaves Clay.
+5. **Safe to share with customers.** A check flags internal specifics before a file leaves Clay. Then the owner either downloads the `.md` or **publishes a read-only link** a customer can open without signing in.
+6. **Adaptations stay visible.** Each customer- or segment-specific version is a fork labelled "Adapted for …", and every fork stays findable alongside the original.
 
 ## Non-goals (v1)
 
-- **Public, unauthenticated links for customers.** Sharing means downloading the file and sending it. The site stays clay.com-only. See open question 1.
 - **Importing a workflow into Clay.** Clay's architecture docs say outright that they aren't importable templates.
 - **Two-way sync with a live Clay workflow.** A link to the workflow is allowed. Syncing is not.
 - **Turning an existing skill into a workflow.** `kind` stays immutable. Anyone who already saved one as a skill re-uploads it.
@@ -42,7 +42,7 @@ New columns, added for every kind and used only by workflows:
 | Column | Type | Notes |
 |---|---|---|
 | `trigger` | `text` (nullable) | Picked from webhook · schedule · table row · manual · other. Shown on the card and used as a filter. |
-| `integrations` | `text[]` | Picked from a new admin-managed catalog (Salesforce, HubSpot, Slack, Snowflake, ZoomInfo, ZeroBounce…). Same rename-cascade and archive rules as teams. Used as a filter. |
+| `integrations` | `text[]` | Picked from a new Integrations catalog (Salesforce, HubSpot, Slack, Snowflake, ZoomInfo, ZeroBounce…) that **Carolyn's team maintains** (see "Integrations catalog"). Same rename-cascade and archive rules as teams. Used as a filter. |
 | `stage` | `text` (nullable) | Draft · Tested · In production. A small badge. |
 | `customer_ready` | `boolean`, default false | The owner confirms the file is safe to send to customers. See below. |
 
@@ -67,6 +67,69 @@ The owner can set **Customer-ready** only after a checklist passes. The check ru
 
 Each hit shows its line number and a jump link into the source view. These are warnings, not blocks. The owner can confirm anyway, and that choice is recorded. Downloading a workflow that isn't marked customer-ready shows one line: "Not marked customer-ready. Check it for internal details before sending."
 
+Nothing is ever added to a downloaded file: no footer, no source line, no version stamp. Download means the file exactly as stored.
+
+### Publish link (customer share)
+
+Any workflow marked customer-ready can be **published** to a public, read-only URL that a customer opens without a Clay login. This is the first page on the site that doesn't require a clay.com login, so it is built as a separate surface with nothing shared with the signed-in app.
+
+**Who.** The owner and editors can publish, see the link list and revoke links. Republishing or revoking is recorded in the item's activity.
+
+**What the link serves.**
+- The link is **pinned to a snapshot** taken at publish time: the `.md`, the attachments chosen at publish, the title and the description. Later edits never leak through a live link. The item page shows "Published version is behind. Update link" when the item has changed since. Updating keeps the URL and replaces the snapshot.
+- The page shows the title, the description, the rendered doc with a table of contents, a Rendered / Source toggle, **Download .md** (the snapshot, byte for byte) and the attachments marked for sharing. It shows a small "Shared by Clay" header with the Clay logo and the publish date.
+- It shows **none** of the following: owner, editors, notes ("How to use"), feedback, votes, forks, version history, teams, links, the library's navigation, search, or anything else from the library.
+
+**Publishing.**
+1. "Publish link" in the detail page's action row opens a panel. If the item isn't customer-ready, the panel shows the customer-ready checklist first.
+2. The server re-runs the customer-ready scan on the exact snapshot and refuses if `customer_ready` is false. Warnings the owner has already acknowledged don't block.
+3. Optional fields: a **label** ("Acme onboarding"), an **expiry** (none, 30, 90 or 365 days), and which attachments to include (none by default).
+4. The result is a copyable URL: `https://www.clayprompts.com/s/<token>`.
+
+**Managing links.** The detail page's side column lists every active link with its label, created by, created at, expires, views and last viewed. Each has Copy, Update to latest and **Revoke**. There can be more than one link per item, so each customer can get its own link and have it revoked separately.
+
+**Security.**
+- **Token.** 32 random bytes, base64url. Only its SHA-256 is stored (same pattern as `mcp_grants`). Tokens are never logged.
+- **Routing.** `/s/*` is added to `PUBLIC_PATHS` in `src/lib/supabase/session.ts`. The route handler looks the token up with the service role and reads **only** the `workflow_shares` row, never `prompts`, so a bug in it can't expose library data. A revoked, expired or unknown token returns the same 404.
+- **Headers.** `X-Robots-Tag: noindex, nofollow`, `Referrer-Policy: no-referrer`, `frame-ancestors 'none'` and a strict CSP (no inline scripts, no third-party requests). The page is rendered on the server and needs no client JS beyond the Source toggle and copy button.
+- **Markdown.** Rendered without raw HTML (same `<MarkdownDoc>` as the app). Links in the doc get `rel="noopener noreferrer nofollow"`. Images only load from the share's own attachments, not from external URLs.
+- **Rate limit.** Per IP on `/s/*` (e.g. 60/min) to make token guessing pointless and limit scraping.
+- **Lifecycle.** Deleting the item revokes all its links. Making the item private doesn't revoke links, because publishing is an explicit owner choice, but the panel says so. Unticking customer-ready asks "Revoke N active links?".
+- **Audit.** Each view increments `view_count` and sets `last_viewed_at`. No IP or user-agent is stored.
+
+**Data.** New table `workflow_shares`:
+
+| Column | Type |
+|---|---|
+| `id` | uuid |
+| `prompt_id` | uuid → `prompts`, on delete cascade |
+| `token_hash` | text, unique |
+| `label` | text |
+| `title`, `description` | text (snapshot) |
+| `file` | jsonb (the `.md` `SkillFile`, snapshot) |
+| `attachments` | jsonb (snapshot; binaries are copied to `shares/<share id>/…` in Storage so later edits or deletes don't affect them) |
+| `source_updated_at` | timestamptz (the item's `updated_at` at publish, used for "behind") |
+| `created_by`, `created_at`, `expires_at`, `revoked_at` | |
+| `view_count`, `last_viewed_at` | |
+
+RLS: owners and editors of the item can select their own item's shares. Inserts, updates and revokes go through security-definer RPCs (`publish_workflow`, `update_workflow_share`, `revoke_workflow_share`) that check the role and `customer_ready`. Anonymous users have no access; the public route uses the service role with a token-hash lookup only.
+
+**MCP / Slack.** The connector gets `publish_workflow` and `revoke_workflow_share`. Both need the person to confirm in chat, and `publish_workflow` returns the scan warnings first. The Slack assistant never publishes; it can link to the item.
+
+### Forks: "Adapted for"
+
+- Forking a workflow asks **"Adapted for"** (required, e.g. "Acme — HubSpot instead of Salesforce", "Mid-market, no ZoomInfo") instead of the generic "What did you change". It is stored in `fork_note`, and the UI labels it "Adapted for …" wherever a workflow fork is shown.
+- **Every fork stays available.** Forks show up in Discover, search, the Slack assistant and the connector just like originals. Nothing is hidden or collapsed under its parent. The card shows "Adapted for …" under the title.
+- The detail page's variants tree is headed **Adaptations** for workflows and lists every fork with its "Adapted for" note, owner, stage and customer-ready status.
+- Deleting the original keeps every adaptation. The existing reparent-on-delete behaviour (`0011_reparent_on_delete.sql`) stays, and the note reads "Original was deleted".
+- Private forks stay private. "All forks remain available" means nothing is hidden by the library itself, not that visibility rules are skipped.
+
+### Integrations catalog
+
+- It is owned by **Carolyn's team**. A new **Workflow maintainers** role (`catalog_managers` table with `scope = 'integrations'`) can add, rename, recolour, reorder and archive integrations. It can't change apps, teams or admins.
+- Admins assign the role from `/admin`. Maintainers get an `/admin/integrations` page and no other admin pages.
+- The first list is seeded from the integrations named in the team's first 3–5 docs.
+
 ## Screens
 
 ### Discover and lists
@@ -76,9 +139,10 @@ Each hit shows its line number and a jump link into the source view. These are w
 
 ### Detail page
 - **Header:** title, description, owner, stage, customer-ready status.
-- **Actions:** Download .md (primary) · Copy Markdown · Download bundle (only with attachments) · Fork · Favorite · Upvote.
+- **Actions:** Download .md (primary) · Publish link · Copy Markdown · Download bundle (only with attachments) · Adapt (fork) · Favorite · Upvote.
+- On a fork, an "Adapted for …" line under the title links to the original.
 - **Main column:** a **Rendered / Source** toggle. Rendered uses GFM (tables, task lists, fenced code), turns headings into anchors and leaves out raw HTML. Code blocks keep whitespace and scroll sideways; they never wrap, because flow-tree diagrams depend on that. Source shows the exact file with line numbers.
-- **Side column:** a table of contents from H2/H3 that stays in place while scrolling and highlights the current section. Below it: trigger, integrations, the apps and model card, links ("Open in Clay"), attachments, teams and editors.
+- **Side column:** a table of contents from H2/H3 that stays in place while scrolling and highlights the current section. Below it: trigger, integrations, **Published links** (owner and editors only), the apps and model card, links ("Open in Clay"), attachments, teams and editors.
 - "How to use", feedback, the variants tree and version history keep their current placement.
 - Long docs: a 32 KB file must render with no visible lag, and so must a 1 MB one with a lot of scrolling. Render on the server.
 
@@ -125,7 +189,8 @@ One paragraph: what the flow does, for whom, and what it writes.
 | Slack assistant | Can recommend workflows. Cards say "Workflow · webhook · Salesforce, Slack". App Home counts workflows. |
 | MCP connector | New `get_workflow` returns the Markdown exactly as stored, plus metadata. `search_library` and `browse_library` accept `kind: "workflow"`. `create_item` / `preview_item` / `update_item` accept workflows (the `.md` as a file plus trigger, integrations and stage). `start_saving` gains a "save this workflow architecture" path. |
 | Weekly digest | Workflows count toward "most engaged" and "new this week", labelled as workflows. |
-| Admin | New Integrations catalog (add, rename, recolour, reorder, archive). |
+| Admin | New Integrations catalog, edited by Workflow maintainers. Admins assign that role. |
+| Public share page `/s/<token>` | New, separate layout with none of the app's navigation. See "Publish link". |
 | README | Features section updated. |
 
 ## Data and migrations
@@ -137,22 +202,36 @@ One paragraph: what the flow does, for whom, and what it writes.
    - rewrites `prompts_body_check` to require `files[0]` to be a `.md` for workflows, keep the 50k body limit, and allow an empty body only for skills;
    - updates `prompts_before_update` so the new columns count as content changes and get snapshotted (and adds them to `prompt_versions`);
    - updates `restore_prompt_version`;
-   - updates `weekly_digest()` and `search_library()`.
-3. **Type layer:** `KINDS` / `KIND_LABELS` in `src/lib/constants.ts` plus the `Prompt` / `PromptDraft` types. Then work through the roughly 60 places across 23 files that branch on `"skill"`. Most are `kind === "skill"` checks that need a third case, not new logic.
-4. **Markdown renderer:** `react-markdown` + `remark-gfm` + `rehype-slug`, with no `rehype-raw` (so no raw HTML), rendered server-side. A shared `<MarkdownDoc>` component. Skills could use it later for SKILL.md.
+   - updates `weekly_digest()` and `search_library()`;
+   - creates `catalog_managers` and lets that role write to `integrations`.
+3. `0023_workflow_shares.sql` creates `workflow_shares`, its RLS, the publish / update / revoke RPCs and the revoke trigger when customer-ready is unticked. Snapshot binaries go to a `shares/` prefix in Storage, readable only through the service role.
+4. **Type layer:** `KINDS` / `KIND_LABELS` in `src/lib/constants.ts` plus the `Prompt` / `PromptDraft` types. Then work through the roughly 60 places across 23 files that branch on `"skill"`. Most are `kind === "skill"` checks that need a third case, not new logic.
+5. **Markdown renderer:** `react-markdown` + `remark-gfm` + `rehype-slug`, with no `rehype-raw` (so no raw HTML), rendered server-side. A shared `<MarkdownDoc>` component. Skills could use it later for SKILL.md.
 
 ## Rollout
 
 1. Ship behind `NEXT_PUBLIC_WORKFLOWS=1` and try it on preview with Carolyn's inbound-routing doc.
-2. Add the Clay Workflows app and a starting set of integrations in /admin.
-3. Carolyn's team submits 3–5 architectures. Fix rendering problems in real docs, especially wide tables and ASCII trees.
-4. Remove the flag and announce in `#auto-clayprompts`.
+2. Add the Clay Workflows app in /admin and give Carolyn's team the Workflow maintainers role so they can seed integrations.
+3. Carolyn's team submits 3–5 architectures and publishes one test link to an internal "customer" (a personal Gmail). Fix rendering problems in real docs, especially wide tables and ASCII trees.
+4. **Security review** of `/s/*` before the flag comes off. Check that a token can't read anything beyond its own snapshot, that revoked, expired and unknown tokens all return the same 404, that the headers are set, and that the rate limit works.
+5. Remove the flag and announce in `#auto-clayprompts`.
 
-**Done when:** an uploaded `.md` downloads with a matching SHA-256; Carolyn's doc renders with every table and the flow map intact; Workflows shows up in Discover, search, Slack and the connector; `npm run build` and lint pass; and the migration applies cleanly to a copy of prod.
+**Done when:**
+- An uploaded `.md` downloads with a matching SHA-256, from both the library and a publish link.
+- Carolyn's doc renders with every table and the flow map intact, in the app and on the public page.
+- Editing an item doesn't change its published link until someone updates it. Revoking a link makes it 404 at once.
+- Every adaptation shows up in Discover and the Adaptations tree.
+- Workflows shows up in Discover, search, Slack and the connector.
+- `npm run build` and lint pass, and the migrations apply cleanly to a copy of prod.
+
+## Decisions
+
+1. **Customer links:** in v1, as a snapshot-pinned, revocable publish link. See "Publish link".
+2. **Integrations list:** Carolyn's team owns it through the Workflow maintainers role.
+3. **Downloads:** never changed. No footer and no stamp.
+4. **Forks:** labelled "Adapted for …", and every fork stays available.
 
 ## Open questions
 
-1. **Customer links.** Should a customer-ready workflow get a public, read-only, revocable share link instead of a downloaded file? That would be the first unauthenticated page on the site, so it needs a security pass. Recommended for v2.
-2. **Integration list.** Who owns it, Carolyn's team or the library admins? Should Clay's action packages seed it automatically?
-3. **Clay branding for customers.** Should a downloaded file get a footer (source, version, date)? That would break the byte-for-byte rule, so the default is no, with an optional "Download with footer".
-4. **Forks.** Is a fork of a reference architecture a fork, or "adapted for <customer>"? Same mechanism either way; possibly different wording.
+1. Should a publish link offer a custom slug (`/s/acme-inbound-routing`) as well as the random token? A readable slug is easier to guess, so the default is token only.
+2. Should expiry default to none, or to 90 days?
