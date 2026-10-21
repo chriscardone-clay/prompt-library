@@ -34,7 +34,8 @@ export async function loadLibrary(service: SupabaseClient, me: McpUser, origin: 
     loadCatalog(service),
   ]);
   if (res.error) throw new Error(`loadLibrary: ${res.error.message}`);
-  const items = ((res.data ?? []) as unknown as PromptRow[]).map(toPrompt);
+  // Workflows are in beta in the app and not offered through the connector yet.
+  const items = ((res.data ?? []) as unknown as PromptRow[]).map(toPrompt).filter((p) => p.kind !== "workflow");
   return { items, catalog, me, origin };
 }
 

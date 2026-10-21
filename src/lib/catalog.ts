@@ -30,9 +30,19 @@ export interface CatalogTeam {
   position: number;
 }
 
+/** An integration a workflow can name (managed by the Workflows team). */
+export interface CatalogIntegration {
+  name: string;
+  color: string;
+  archived: boolean;
+  position: number;
+}
+
 export interface Catalog {
   apps: CatalogApp[];
   teams: CatalogTeam[];
+  /** Workflow integrations; absent where the catalog was built without them. */
+  integrations?: CatalogIntegration[];
 }
 
 export const EMPTY_CATALOG: Catalog = { apps: [], teams: [] };
@@ -41,6 +51,12 @@ export const EMPTY_CATALOG: Catalog = { apps: [], teams: [] };
 export const FALLBACK_TONE = { bg: "#F4F3F0", fg: "#1B1A18" };
 /** Tint + ink for "Required model" badges (tangerine 100 / 400). */
 export const REQUIRED_TONE = { bg: "#FFF3ED", fg: "#B53D0A" };
+/** Workflow badges: the kind (blueberry), reference vs adaptation, customer-ready. */
+export const WORKFLOW_TONE = { bg: "#E6F0FF", fg: "#2F49C9" };
+export const REFERENCE_TONE = { bg: "#F0FCFF", fg: "#006F8A" };
+export const ADAPTATION_TONE = { bg: "#F5F3FF", fg: "#6D4CD6" };
+export const READY_TONE = { bg: "#FCFEE2", fg: "#3E5A05" };
+export const NOT_READY_TONE = { bg: "#FEFAE8", fg: "#7A4502" };
 
 export interface Tone {
   bg: string;
@@ -77,6 +93,16 @@ export function activeApps(catalog: Catalog): CatalogApp[] {
 
 export function activeTeams(catalog: Catalog): CatalogTeam[] {
   return catalog.teams.filter((t) => !t.archived);
+}
+
+export function activeIntegrations(catalog: Catalog): CatalogIntegration[] {
+  return (catalog.integrations ?? []).filter((i) => !i.archived);
+}
+
+/** The catalog's spelling of an integration name, matched case-insensitively. */
+export function catalogIntegration(catalog: Catalog, name: string): CatalogIntegration | undefined {
+  const key = name.trim().toLowerCase();
+  return (catalog.integrations ?? []).find((i) => i.name.toLowerCase() === key);
 }
 
 export function isKnownApp(catalog: Catalog, name: string): boolean {

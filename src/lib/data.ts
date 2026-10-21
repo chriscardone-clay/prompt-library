@@ -3,8 +3,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { avatarIsStale, syncSlackAvatar } from "./avatars";
-import { type Catalog, type CatalogApp, type CatalogTeam } from "./catalog";
-import { isVisibility } from "./constants";
+import { type Catalog, type CatalogApp, type CatalogIntegration, type CatalogTeam } from "./catalog";
+import { isStage, isTrigger, isVisibility } from "./constants";
+import { workflowsAllowedByEnv } from "./features";
 import { personFromEmail, personFromProfile, UNKNOWN_PERSON } from "./people";
 import { asFiles, asLinks } from "./skills";
 import type { Feedback, Person, Profile, Prompt, PromptNode, PromptVersion } from "./types";
@@ -25,6 +26,10 @@ export interface PromptRow {
   notes: string | null;
   files: unknown;
   links: unknown;
+  workflow_trigger?: string | null;
+  workflow_stage?: string | null;
+  integrations?: string[] | null;
+  customer_ready?: boolean | null;
   audiences: string[] | null;
   visibility: string;
   owner_id: string;
@@ -43,6 +48,7 @@ export interface PromptRow {
 export const PROMPT_SELECT = `
   id, kind, title, description, body, notes, files, links, audiences, visibility, owner_id, parent_id,
   fork_note, last_edited_by, created_at, updated_at,
+  workflow_trigger, workflow_stage, integrations, customer_ready,
   owner:profiles!prompts_owner_id_fkey ( id, email, name, avatar_url ),
   prompt_apps ( app, surfaces, model, model_required ),
   prompt_editors ( email, profile:profiles!prompt_editors_profile_id_fkey ( id, email, name, avatar_url ) ),
@@ -57,13 +63,19 @@ function toPerson(p: ProfileRow | null | undefined): Person {
 export function toPrompt(r: PromptRow): Prompt {
   return {
     id: r.id,
-    kind: r.kind === "skill" ? "skill" : "prompt",
+    kind: r.kind === "skill" ? "skill" : r.kind === "workflow" ? "workflow" : "prompt",
     title: r.title,
     description: r.description ?? "",
     body: r.body,
     notes: r.notes ?? "",
     files: asFiles(r.files),
     links: asLinks(r.links),
+    workflow: {
+      trigger: isTrigger(r.workflow_trigger) ? r.workflow_trigger : "",
+      stage: isStage(r.workflow_stage) ? r.workflow_stage : "",
+      integrations: (r.integrations ?? []).filter((i) => typeof i === "string" && i.trim()),
+      customerReady: !!r.customer_ready,
+    },
     audiences: (r.audiences ?? []).filter((a) => typeof a === "string" && a.trim()),
     visibility: isVisibility(r.visibility) ? r.visibility : "public",
     ownerId: r.owner_id,
@@ -118,15 +130,43 @@ export const isAdmin = cache(async (): Promise<boolean> => {
   return !error && data === true;
 });
 
+/**
+ * Whether the signed-in person can see and create workflows: the
+ * WORKFLOWS_BETA boolean in Vercel Flags, targeted per user (flags.ts).
+ * Admins always can. The WORKFLOWS_BETA env var (features.ts) is a fallback
+ * for local development and hosts without Vercel Flags.
+ */
+export const workflowsEnabled = cache(async (): Promise<boolean> => {
+  const user = await getCurrentUser();
+  if (!user) return false;
+  if (workflowsAllowedByEnv(user.email)) return true;
+  try {
+    // Imported lazily: flags.ts imports this module for getCurrentUser.
+    const { workflowsBeta } = await import("./flags");
+    if (await workflowsBeta()) return true;
+  } catch (err) {
+    console.warn("[flags] WORKFLOWS_BETA unavailable:", err instanceof Error ? err.message : err);
+  }
+  return isAdmin();
+});
+
+/** Admins and Workflow maintainers (catalog_managers) may edit the Integrations catalog. */
+export const canManageIntegrations = cache(async (): Promise<boolean> => {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("can_manage_integrations");
+  return !error && data === true;
+});
+
 // ── Catalog (apps, surfaces, teams) ─────────────────────────────────
 export const getCatalog = cache(async (): Promise<Catalog> => loadCatalog(await createClient()));
 
 /** The catalog read through any client (the MCP connector uses the service client). */
 export async function loadCatalog(supabase: SupabaseClient): Promise<Catalog> {
-  const [appsRes, surfRes, teamsRes] = await Promise.all([
+  const [appsRes, surfRes, teamsRes, intRes] = await Promise.all([
     supabase.from("apps").select("name, bg, fg, install, archived, position, model_hint").order("position").order("name"),
     supabase.from("surfaces").select("app, name, install, position").order("position").order("name"),
     supabase.from("teams").select("name, archived, position").order("position").order("name"),
+    supabase.from("integrations").select("name, color, archived, position").order("position").order("name"),
   ]);
   if (appsRes.error) throw new Error(`getCatalog apps: ${appsRes.error.message}`);
   if (surfRes.error) throw new Error(`getCatalog surfaces: ${surfRes.error.message}`);
@@ -152,7 +192,9 @@ export async function loadCatalog(supabase: SupabaseClient): Promise<Catalog> {
     archived: t.archived,
     position: t.position,
   }));
-  return { apps, teams };
+  // Integrations are workflow-only: a failed read leaves the list empty rather than breaking every page.
+  const integrations = intRes.error ? [] : ((intRes.data ?? []) as CatalogIntegration[]);
+  return { apps, teams, integrations };
 }
 
 /** How many items use each app / surface / team. Admin page only. */
@@ -191,7 +233,8 @@ export const listPrompts = cache(async (): Promise<Prompt[]> => {
     .select(PROMPT_SELECT)
     .order("updated_at", { ascending: false });
   if (error) throw new Error(`listPrompts: ${error.message}`);
-  return ((data ?? []) as unknown as PromptRow[]).map(toPrompt);
+  const all = ((data ?? []) as unknown as PromptRow[]).map(toPrompt);
+  return (await workflowsEnabled()) ? all : all.filter((p) => p.kind !== "workflow");
 });
 
 export async function getPrompt(id: string): Promise<Prompt | null> {
@@ -205,7 +248,9 @@ export async function getPrompt(id: string): Promise<Prompt | null> {
     if (error.code === "22P02") return null; // not a uuid
     throw new Error(`getPrompt: ${error.message}`);
   }
-  return data ? toPrompt(data as unknown as PromptRow) : null;
+  if (!data) return null;
+  const p = toPrompt(data as unknown as PromptRow);
+  return p.kind === "workflow" && !(await workflowsEnabled()) ? null : p;
 }
 
 /** Lightweight rows for fork counts and the variants tree. */

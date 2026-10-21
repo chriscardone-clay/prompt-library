@@ -59,6 +59,25 @@ const nextConfig: NextConfig = {
         headers: [{ key: "Content-Security-Policy", value: "frame-ancestors 'none'" }],
       },
       {
+        // Workflow publish links: never framed, indexed or leaking the URL in a Referer.
+        source: "/s/:path*",
+        headers: [
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+        ],
+      },
+      {
+        // Workflow attachments are user uploads: download only, never run as a page in this origin.
+        // (Listed after the rules above so this CSP wins.)
+        source: "/prompts/:id/files/:name*",
+        headers: [{ key: "Content-Security-Policy", value: "default-src 'none'; sandbox; frame-ancestors 'none'" }],
+      },
+      {
+        source: "/s/:token/files/:name*",
+        headers: [{ key: "Content-Security-Policy", value: "default-src 'none'; sandbox; frame-ancestors 'none'" }],
+      },
+      {
         source: "/fonts/(.*)",
         headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
       },

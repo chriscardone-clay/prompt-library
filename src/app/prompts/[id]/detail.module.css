@@ -153,3 +153,62 @@
   font-size: 13px;
   color: var(--fg-muted);
 }
+
+/* Workflows: contents list, facts, customer-ready findings */
+.toc {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.toc a {
+  padding: 5px 10px;
+  border-radius: 8px;
+  color: var(--fg-muted);
+}
+.toc a:hover {
+  background: var(--oat-100);
+  color: var(--fg);
+  text-decoration: none;
+}
+.toc a[data-depth="3"] {
+  padding-left: 24px;
+  font-size: 13px;
+}
+.facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+  font-size: 14px;
+}
+.findings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.finding {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--oat-100);
+  color: var(--fg);
+}
+a.finding:hover {
+  text-decoration: none;
+  background: var(--white);
+}
+.findingIcon {
+  color: var(--lemon-500);
+  flex: none;
+  margin-top: 2px;
+}
+.okIcon {
+  color: var(--lime-400);
+  flex: none;
+  margin-top: 2px;
+}

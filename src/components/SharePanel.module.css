@@ -1,0 +1,99 @@
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.note {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--oat-100);
+}
+.note a {
+  text-decoration: underline;
+}
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--oat-100);
+}
+.pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.pill {
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--fg);
+  border-radius: var(--radius-pill);
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.pill[aria-pressed="true"] {
+  background: var(--fg);
+  border-color: var(--fg);
+  color: var(--oat-100);
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.copyField {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-raised);
+  border: 1px solid var(--grey-line);
+  min-width: 0;
+}
+.url {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--oat-100);
+  min-width: 0;
+}
+.rowHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.badge {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--lemon-200);
+  color: var(--lemon-500);
+}
+.danger {
+  color: var(--danger-fg);
+}

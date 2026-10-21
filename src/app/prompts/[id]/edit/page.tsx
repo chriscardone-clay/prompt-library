@@ -4,6 +4,8 @@ import { Header } from "@/components/Header";
 import { PromptEditor } from "@/components/PromptEditor";
 import { canEdit, getCatalog, getCurrentUser, getPrompt } from "@/lib/data";
 import { personFromProfile } from "@/lib/people";
+import { listShares } from "@/lib/shares";
+import { packDocFiles } from "@/lib/workflows";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Edit" };
@@ -16,6 +18,7 @@ export default async function EditPromptPage({ params }: { params: Promise<{ id:
   const prompt = await getPrompt(id);
   if (!prompt) notFound();
   if (!canEdit(prompt, user)) redirect(`/prompts/${id}`);
+  const activeShares = prompt.kind === "workflow" ? (await listShares(prompt.id)).filter((s) => !s.expired).length : 0;
 
   return (
     <div className="container">
@@ -29,8 +32,9 @@ export default async function EditPromptPage({ params }: { params: Promise<{ id:
           description: prompt.description,
           body: prompt.body,
           notes: prompt.notes,
-          files: prompt.files.map((f) => ({ ...f })),
+          files: prompt.kind === "workflow" ? packDocFiles(prompt.files) : prompt.files.map((f) => ({ ...f })),
           links: prompt.links.map((l) => ({ ...l })),
+          workflow: { ...prompt.workflow },
           apps: prompt.apps,
           audiences: prompt.audiences,
           visibility: prompt.visibility,
@@ -42,6 +46,7 @@ export default async function EditPromptPage({ params }: { params: Promise<{ id:
         people={prompt.editors}
         catalog={catalog}
         cancelHref={`/prompts/${prompt.id}`}
+        activeShares={activeShares}
       />
     </div>
   );

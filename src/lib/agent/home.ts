@@ -40,7 +40,7 @@ function line(site: string, it: Item, extra?: string): string {
  */
 export async function buildHomeBlocks(client: SupabaseClient, email: string | null): Promise<Record<string, unknown>[]> {
   const site = getSiteUrl();
-  const { data, error } = await client.from("prompts").select(SELECT).eq("visibility", "public");
+  const { data, error } = await client.from("prompts").select(SELECT).eq("visibility", "public").neq("kind", "workflow");
   if (error) throw new Error(`home: ${error.message}`);
   const items = (data ?? []) as unknown as Item[];
   const total = items.length;

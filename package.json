@@ -14,15 +14,24 @@
     "db:types": "supabase gen types typescript --local > src/lib/database.types.ts"
   },
   "dependencies": {
+    "@flags-sdk/vercel": "^1.5.2",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@phosphor-icons/react": "^2.1.10",
     "@supabase/ssr": "^0.12.6",
     "@supabase/supabase-js": "^2.115.0",
     "ai": "^7.0.93",
+    "flags": "^4.3.1",
+    "github-slugger": "^2.0.0",
+    "mdast-util-to-string": "^4.0.0",
     "next": "^16.3.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "react-markdown": "^10.1.0",
+    "rehype-slug": "^6.0.0",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
     "server-only": "^0.0.1",
+    "unified": "^11.0.5",
     "zod": "^4.5.4"
   },
   "devDependencies": {

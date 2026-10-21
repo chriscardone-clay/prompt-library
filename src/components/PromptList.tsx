@@ -9,19 +9,20 @@ import {
   activeTeams,
   toneStyle,
   appTone,
+  catalogIntegration,
   isKnownApp,
   REQUIRED_TONE,
   isKnownTeam,
   surfacesOf,
   type Catalog,
 } from "@/lib/catalog";
-import { isSort, SORT_LABELS, SORTS, type Kind, type Sort } from "@/lib/constants";
+import { isSort, isTrigger, SORT_LABELS, SORTS, STAGE_LABELS, TRIGGER_LABELS, WORKFLOW_TRIGGERS, type Kind, type Sort } from "@/lib/constants";
 import { ago, plural } from "@/lib/format";
 import { searchPrompts } from "@/lib/search";
 import type { Profile, Prompt } from "@/lib/types";
 import { Avatar } from "./Avatar";
 import { FavoriteButton } from "./FavoriteButton";
-import { AppTag, SkillTag } from "./Tag";
+import { AppTag, IntegrationTag, OriginTag, ReadyTag, SkillTag, TriggerTag, WorkflowTag } from "./Tag";
 import { VoteButton } from "./VoteButton";
 import styles from "./PromptList.module.css";
 
@@ -32,7 +33,13 @@ interface Props {
   allPrompts?: Prompt[];
   me: Profile;
   catalog: Catalog;
+  /** Workflows are in beta: only people in WORKFLOWS_BETA (and admins) see the tab. */
+  workflowsOn?: boolean;
+  /** Admins and Workflow maintainers get a link to the Integrations catalog. */
+  manageIntegrations?: boolean;
 }
+
+type Origin = "all" | "reference" | "adapted";
 
 type KindFilter = Kind | "all";
 
@@ -57,7 +64,7 @@ function serialiseSurfaces(s: Record<string, string[]>): string | null {
 }
 const listParam = (v: string[]) => (v.length ? v.join(",") : null);
 
-export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
+export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn = false, manageIntegrations = false }: Props) {
   const params = useSearchParams();
   const pathname = usePathname();
 
@@ -112,7 +119,14 @@ export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
 
   // ── Filter state (all in the URL) ─────────────────────────────────
   const kindParam = params.get("kind");
-  const kind: KindFilter = kindParam === "prompts" ? "prompt" : kindParam === "skills" ? "skill" : "all";
+  const kind: KindFilter =
+    kindParam === "prompts" ? "prompt" : kindParam === "skills" ? "skill" : kindParam === "workflows" && workflowsOn ? "workflow" : "all";
+  const isWf = kind === "workflow";
+  const originParam = params.get("origin");
+  const origin: Origin = isWf && (originParam === "reference" || originParam === "adapted") ? originParam : "all";
+  const triggers = isWf ? (params.get("triggers") ?? "").split(",").filter(isTrigger) : [];
+  const integrations = isWf ? (params.get("integrations") ?? "").split(",").filter(Boolean) : [];
+  const readyOnly = isWf && params.get("ready") === "1";
   const apps = (params.get("apps") ?? "").split(",").filter((a) => isKnownApp(catalog, a));
   const surfaces = parseSurfaces(params.get("surfaces"), catalog);
   const teams = (params.get("teams") ?? "").split(",").filter((t) => isKnownTeam(catalog, t));
@@ -135,14 +149,35 @@ export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
   };
   const toggleTeam = (t: string) =>
     writeUrl({ teams: listParam(teams.includes(t) ? teams.filter((x) => x !== t) : [...teams, t]) });
+  const toggleTrigger = (t: string) =>
+    writeUrl({ triggers: listParam(triggers.includes(t as never) ? triggers.filter((x) => x !== t) : [...triggers, t]) });
+  const toggleIntegration = (i: string) =>
+    writeUrl({ integrations: listParam(integrations.includes(i) ? integrations.filter((x) => x !== i) : [...integrations, i]) });
   const clearFilters = () => {
     if (qTimer.current) clearTimeout(qTimer.current);
     setQ("");
     lastWrittenQ.current = "";
-    writeUrl({ apps: null, surfaces: null, teams: null, q: null });
+    writeUrl({ apps: null, surfaces: null, teams: null, q: null, triggers: null, integrations: null, ready: null });
   };
 
-  const activeCount = apps.length + Object.values(surfaces).reduce((n, v) => n + (v?.length ?? 0), 0) + teams.length;
+  const activeCount =
+    apps.length +
+    Object.values(surfaces).reduce((n, v) => n + (v?.length ?? 0), 0) +
+    teams.length +
+    triggers.length +
+    integrations.length +
+    (readyOnly ? 1 : 0);
+
+  // Integrations to filter by: whatever the visible workflows use, most used first.
+  const integrationOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of prompts) {
+      if (p.kind !== "workflow") continue;
+      for (const i of p.workflow.integrations) counts.set(i, (counts.get(i) ?? 0) + 1);
+    }
+    for (const i of integrations) if (!counts.has(i)) counts.set(i, 0);
+    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([n]) => n);
+  }, [prompts, integrations]);
   const hasActive = activeCount > 0 || q.trim().length > 0;
 
   // ── Derived list ──────────────────────────────────────────────────
@@ -170,6 +205,12 @@ export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
       );
     }
     if (teams.length) out = out.filter((p) => p.audiences.some((a) => teams.includes(a)));
+    if (triggers.length) out = out.filter((p) => p.workflow.trigger !== "" && triggers.includes(p.workflow.trigger));
+    if (integrations.length) {
+      const want = integrations.map((i) => i.toLowerCase());
+      out = out.filter((p) => p.workflow.integrations.some((i) => want.includes(i.toLowerCase())));
+    }
+    if (readyOnly) out = out.filter((p) => p.workflow.customerReady);
     // Ranked search over title, description, notes/apps/teams and the prompt text
     // (SKILL.md for skills). While searching, relevance orders the list.
     const relevance = new Map<string, number>();
@@ -191,7 +232,13 @@ export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
       return t(b.updatedAt) - t(a.updatedAt);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prompts, kind, q, params.get("apps"), params.get("surfaces"), params.get("teams"), sort, catalog]);
+  }, [prompts, kind, q, params.get("apps"), params.get("surfaces"), params.get("teams"), params.get("triggers"), params.get("integrations"), readyOnly, sort, catalog]);
+
+  // Reference architectures vs adaptations, counted before the toggle narrows the list.
+  const originCounts = isWf
+    ? { all: list.length, reference: list.filter((p) => !p.parentId).length, adapted: list.filter((p) => !!p.parentId).length }
+    : null;
+  const shown = origin === "all" ? list : list.filter((p) => (origin === "adapted" ? !!p.parentId : !p.parentId));
 
   const title =
     view === "mine"
@@ -202,15 +249,17 @@ export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
           ? "Discover skills"
           : kind === "prompt"
             ? "Discover prompts"
-            : "Discover";
+            : kind === "workflow"
+              ? "Discover workflows"
+              : "Discover";
   const countLabel =
     view === "mine"
-      ? `${plural(list.length, "item")} you own or edit`
+      ? `${plural(shown.length, "item")} you own or edit`
       : view === "favorites"
-        ? `${plural(list.length, "item")} you saved`
-        : plural(list.length, kind === "skill" ? "skill" : kind === "prompt" ? "prompt" : "item");
-  const newHref = kind === "skill" ? "/skills/new" : "/prompts/new";
-  const newLabel = kind === "skill" ? "New skill" : "New prompt";
+        ? `${plural(shown.length, "item")} you saved`
+        : plural(shown.length, kind === "all" ? "item" : kind);
+  const newHref = kind === "skill" ? "/skills/new" : kind === "workflow" ? "/workflows/new" : "/prompts/new";
+  const newLabel = kind === "skill" ? "New skill" : kind === "workflow" ? "New workflow" : "New prompt";
 
   const activeChips: { key: string; label: string; bg: string; fg: string; remove: () => void }[] = [
     ...apps.map((app) => {
@@ -224,13 +273,30 @@ export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
       };
     }),
     ...teams.map((t) => ({ key: `t-${t}`, label: t, bg: "var(--white)", fg: "var(--fg)", remove: () => toggleTeam(t) })),
+    ...triggers.map((t) => ({ key: `tr-${t}`, label: `Trigger: ${TRIGGER_LABELS[t]}`, bg: "var(--white)", fg: "var(--fg)", remove: () => toggleTrigger(t) })),
+    ...integrations.map((i) => ({ key: `i-${i}`, label: i, bg: "var(--white)", fg: "var(--fg)", remove: () => toggleIntegration(i) })),
+    ...(readyOnly ? [{ key: "ready", label: "Customer-ready", bg: "var(--white)", fg: "var(--fg)", remove: () => writeUrl({ ready: null }) }] : []),
   ];
 
   return (
     <section className={styles.section}>
-      <div className={styles.titleStack}>
-        <h1 className="display-lg">{title}</h1>
-        <div className="muted small">{countLabel}</div>
+      <div className={styles.titleRow}>
+        <div className={styles.titleStack}>
+          <h1 className="display-lg">{title}</h1>
+          <div className="muted small">{countLabel}</div>
+        </div>
+        {isWf ? (
+          <div className="row gap-2 wrap">
+            {manageIntegrations ? (
+              <Link href="/admin/integrations" className="btn btn-outline">
+                Integrations
+              </Link>
+            ) : null}
+            <Link href="/workflows/new" className="btn btn-outline">
+              New workflow
+            </Link>
+          </div>
+        ) : null}
       </div>
 
       {/* ── Toolbar ── */}
@@ -269,6 +335,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
                 ["all", "All"],
                 ["prompt", "Prompts"],
                 ["skill", "Skills"],
+                ...(workflowsOn ? [["workflow", "Workflows"]] : []),
               ] as [KindFilter, string][]
             ).map(([k, label]) => (
               <button
@@ -276,7 +343,13 @@ export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
                 type="button"
                 className={styles.kindBtn}
                 aria-pressed={kind === k}
-                onClick={() => writeUrl({ kind: k === "all" ? null : k === "skill" ? "skills" : "prompts" })}
+                onClick={() =>
+                  writeUrl({
+                    kind: k === "all" ? null : `${k}s`,
+                    // Workflow-only filters don't apply to the other kinds.
+                    ...(k === "workflow" ? {} : { origin: null, triggers: null, integrations: null, ready: null }),
+                  })
+                }
               >
                 {label}
               </button>
@@ -297,6 +370,29 @@ export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
             ))}
           </div>
         </div>
+        {originCounts ? (
+          <div className={styles.activeRow}>
+            <div className={styles.kindGroup} role="group" aria-label="Reference architectures or adaptations">
+              {(
+                [
+                  ["all", "All", originCounts.all],
+                  ["reference", "Reference architectures", originCounts.reference],
+                  ["adapted", "Adaptations", originCounts.adapted],
+                ] as [Origin, string, number][]
+              ).map(([o, label, n]) => (
+                <button
+                  key={o}
+                  type="button"
+                  className={styles.kindBtn}
+                  aria-pressed={origin === o}
+                  onClick={() => writeUrl({ origin: o === "all" ? null : o })}
+                >
+                  {label} <span className={styles.badge}>{n}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
         {hasActive ? (
           <div className={styles.activeRow}>
             {activeChips.map((c) => (
@@ -415,6 +511,56 @@ export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
               </div>
             </div>
 
+            {isWf ? (
+              <>
+                <div className={styles.group}>
+                  <span className="eyebrow">Trigger</span>
+                  <div className={styles.optionList}>
+                    {WORKFLOW_TRIGGERS.map((t) => {
+                      const on = triggers.includes(t);
+                      return (
+                        <button key={t} type="button" className={styles.option} role="checkbox" aria-checked={on} onClick={() => toggleTrigger(t)}>
+                          {on ? <CheckSquare weight="fill" size={18} /> : <Square size={18} />}
+                          {TRIGGER_LABELS[t]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                {integrationOptions.length ? (
+                  <div className={styles.group}>
+                    <span className="eyebrow">Integrations</span>
+                    <div className={styles.optionList}>
+                      {integrationOptions.map((i) => {
+                        const on = integrations.includes(i);
+                        return (
+                          <button key={i} type="button" className={styles.option} role="checkbox" aria-checked={on} onClick={() => toggleIntegration(i)}>
+                            {on ? <CheckSquare weight="fill" size={18} /> : <Square size={18} />}
+                            {i}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+                <div className={styles.group}>
+                  <span className="eyebrow">Sharing</span>
+                  <div className={styles.optionList}>
+                    <button
+                      type="button"
+                      className={styles.option}
+                      role="checkbox"
+                      aria-checked={readyOnly}
+                      onClick={() => writeUrl({ ready: readyOnly ? null : "1" })}
+                    >
+                      {readyOnly ? <CheckSquare weight="fill" size={18} /> : <Square size={18} />}
+                      Customer-ready only
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : null}
+
             {hasActive ? (
               <button type="button" className="btn btn-outline btn-sm on-slab" style={{ alignSelf: "flex-start" }} onClick={clearFilters}>
                 Clear all
@@ -424,9 +570,9 @@ export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
         ) : null}
 
         <div className={styles.results}>
-          {list.length ? (
+          {shown.length ? (
             <div className={styles.grid}>
-              {list.map((p) => (
+              {shown.map((p) => (
                 <PromptCard key={p.id} prompt={p} forks={forkCounts.get(p.id) ?? 0} meId={me.id} catalog={catalog} />
               ))}
             </div>
@@ -440,7 +586,11 @@ export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
                   ? "Tap the heart on any prompt or skill to keep it here for quick access."
                   : kind === "skill"
                     ? "Clear a filter, or share the skill your team keeps rebuilding."
-                    : "Clear a filter, or write the prompt your team keeps asking for."}
+                    : kind === "workflow"
+                      ? hasActive || origin !== "all"
+                        ? "No workflows match these filters. Try removing one."
+                        : "No workflows yet. Upload your first architecture .md."
+                      : "Clear a filter, or write the prompt your team keeps asking for."}
               </div>
               <div className="row gap-2 wrap" style={{ justifyContent: "center" }}>
                 {hasActive ? (
@@ -461,6 +611,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog }: Props) {
 }
 
 function PromptCard({ prompt: p, forks, meId, catalog }: { prompt: Prompt; forks: number; meId: string; catalog: Catalog }) {
+  if (p.kind === "workflow") return <WorkflowCard prompt={p} forks={forks} meId={meId} catalog={catalog} />;
   const parts: string[] = [];
   if (p.kind === "skill") {
     if (p.files.length) parts.push(plural(p.files.length, "file"));
@@ -519,6 +670,58 @@ function PromptCard({ prompt: p, forks, meId, catalog }: { prompt: Prompt; forks
           count={p.upvoteUserIds.length}
           voted={p.upvoteUserIds.includes(meId)}
         />
+      </div>
+    </article>
+  );
+}
+
+function WorkflowCard({ prompt: p, forks, meId, catalog }: { prompt: Prompt; forks: number; meId: string; catalog: Catalog }) {
+  const w = p.workflow;
+  const parts = [w.stage ? STAGE_LABELS[w.stage] : null, `updated ${ago(p.updatedAt)}`, forks ? plural(forks, "adaptation") : null];
+  return (
+    <article className={styles.card}>
+      <div className={styles.cardTags}>
+        <WorkflowTag />
+        <OriginTag adapted={!!p.parentId} />
+        <TriggerTag trigger={w.trigger} />
+        <div className="grow" />
+        {p.visibility === "private" ? <LockSimple size={16} className="muted" aria-label="Private" /> : null}
+        <FavoriteButton promptId={p.id} favorited={p.favoritedBy.includes(meId)} />
+      </div>
+      <div className={styles.cardBody}>
+        <h2 className={styles.cardTitle}>
+          <Link href={`/prompts/${p.id}`} className={styles.cardLink}>
+            {p.title}
+          </Link>
+        </h2>
+        {p.parentId && p.forkNote ? (
+          <p className={`${styles.cardDesc} clamp-2`}>
+            <GitFork weight="bold" size={12} /> Adapted for <strong style={{ color: "var(--fg)" }}>{p.forkNote}</strong>
+          </p>
+        ) : (
+          <p className={`${styles.cardDesc} clamp-2`}>{p.description}</p>
+        )}
+        {w.integrations.length || w.customerReady ? (
+          <div className={styles.cardTags}>
+            {w.integrations.slice(0, 3).map((i) => (
+              <IntegrationTag key={i} name={i} color={catalogIntegration(catalog, i)?.color} />
+            ))}
+            {w.integrations.length > 3 ? (
+              <span className="tag tag-light tag-muted" title={w.integrations.slice(3).join(", ")}>
+                +{w.integrations.length - 3}
+              </span>
+            ) : null}
+            <ReadyTag ready={w.customerReady} />
+          </div>
+        ) : null}
+      </div>
+      <div className={styles.cardFoot}>
+        <Avatar person={p.owner} size={26} />
+        <div className={styles.owner}>
+          <span className={`${styles.ownerName} truncate`}>{p.owner.name}</span>
+          <span className={styles.ownerMeta}>{parts.filter(Boolean).join(" · ")}</span>
+        </div>
+        <VoteButton promptId={p.id} count={p.upvoteUserIds.length} voted={p.upvoteUserIds.includes(meId)} />
       </div>
     </article>
   );

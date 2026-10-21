@@ -1,4 +1,15 @@
-import type { Kind, Visibility } from "./constants";
+import type { Kind, Visibility, WorkflowStage, WorkflowTrigger } from "./constants";
+
+/** Facts about a workflow, filterable in Discover. Empty/false on prompts and skills. */
+export interface WorkflowMeta {
+  trigger: WorkflowTrigger | "";
+  stage: WorkflowStage | "";
+  integrations: string[];
+  /** The owner confirmed the .md is safe to send to customers. */
+  customerReady: boolean;
+}
+
+export const EMPTY_WORKFLOW: WorkflowMeta = { trigger: "", stage: "", integrations: [], customerReady: false };
 
 export interface Profile {
   id: string;
@@ -61,12 +72,17 @@ export interface Prompt {
   kind: Kind;
   title: string;
   description: string;
-  /** Prompt text; for skills, the SKILL.md content (or empty for link-only skills). */
+  /**
+   * Prompt text; for skills, the SKILL.md content (or empty for link-only
+   * skills); for workflows, the start of the architecture .md.
+   */
   body: string;
   /** Optional "How to use" guidance: when to use it, tips, connectors it needs. */
   notes: string;
+  /** Skill bundle files; for a workflow, files[0] is the architecture .md, byte for byte. */
   files: SkillFile[];
   links: SkillLink[];
+  workflow: WorkflowMeta;
   /** Teams (from the catalog) this is for; at least one. */
   audiences: string[];
   visibility: Visibility;
@@ -126,6 +142,8 @@ export interface PromptDraft {
   notes: string;
   files: SkillFile[];
   links: SkillLink[];
+  /** Workflows only; ignored for prompts and skills. */
+  workflow?: WorkflowMeta;
   apps: PromptApp[];
   audiences: string[];
   visibility: Visibility;

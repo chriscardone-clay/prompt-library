@@ -18,9 +18,11 @@ interface Props {
   versions: PromptVersion[]; // oldest → newest
   currentLabel: string;
   currentSub: string;
+  /** Workflows: the download URL; `?version=<id>` gets a version's .md exactly as it was. */
+  downloadHref?: string;
 }
 
-export function VersionHistory({ versions, currentLabel, currentSub }: Props) {
+export function VersionHistory({ versions, currentLabel, currentSub, downloadHref }: Props) {
   const [open, setOpen] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const router = useRouter();
@@ -92,6 +94,11 @@ export function VersionHistory({ versions, currentLabel, currentSub }: Props) {
                     <ArrowCounterClockwise weight="bold" size={13} />
                     Restore this version
                   </button>
+                  {downloadHref ? (
+                    <a href={`${downloadHref}?version=${encodeURIComponent(v.id)}`} className="btn btn-outline btn-sm on-slab" style={{ alignSelf: "flex-start" }}>
+                      Download this version&apos;s .md
+                    </a>
+                  ) : null}
                 </div>
               ) : null}
             </div>

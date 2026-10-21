@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { Header } from "@/components/Header";
 import { PromptList } from "@/components/PromptList";
 import { ToastFromQuery } from "@/components/Toast";
-import { getCatalog, getCurrentUser, listPrompts } from "@/lib/data";
+import { getCatalog, getCurrentUser, listPrompts, workflowsEnabled } from "@/lib/data";
 import { shouldNudgeToSlack } from "@/lib/slackNudge";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: "Favorites" };
 export default async function FavoritesPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  const [all, catalog, nudge] = await Promise.all([listPrompts(), getCatalog(), shouldNudgeToSlack(user)]);
+  const [all, catalog, nudge, workflowsOn] = await Promise.all([listPrompts(), getCatalog(), shouldNudgeToSlack(user), workflowsEnabled()]);
   const saved = all.filter((p) => p.favoritedBy.includes(user.id));
 
   return (
@@ -23,7 +23,7 @@ export default async function FavoritesPage() {
         <ToastFromQuery />
       </Suspense>
       <Suspense fallback={null}>
-        <PromptList view="favorites" prompts={saved} allPrompts={all} me={user} catalog={catalog} />
+        <PromptList view="favorites" prompts={saved} allPrompts={all} me={user} catalog={catalog} workflowsOn={workflowsOn} />
       </Suspense>
     </div>
   );

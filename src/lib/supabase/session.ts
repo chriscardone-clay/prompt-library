@@ -7,7 +7,8 @@ import { supabaseKey, supabaseUrl } from "./env";
 // /api/digest authenticates itself with CRON_SECRET (see src/app/api/digest/route.ts);
 // the MCP connector and its OAuth endpoints use bearer tokens (src/lib/mcp/oauth.ts).
 // /oauth/authorize is deliberately not public: it needs a signed-in Clay account.
-const PUBLIC_PATHS = ["/login", "/auth", "/api/digest", "/api/slack", "/api/mcp", "/api/oauth", "/.well-known"];
+// /s/<token> is a workflow publish link: read-only, reads only workflow_shares (src/lib/shares.ts).
+const PUBLIC_PATHS = ["/login", "/auth", "/api/digest", "/api/slack", "/api/mcp", "/api/oauth", "/.well-known", "/s"];
 
 function isPublic(pathname: string) {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));

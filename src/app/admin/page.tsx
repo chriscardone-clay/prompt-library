@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { AdminPanel } from "@/components/AdminPanel";
 import { AssistantPanel } from "@/components/AssistantPanel";
@@ -55,6 +56,15 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     <div className="container">
       <Header user={user} />
       <AdminPanel catalog={catalog} usage={usage} admins={admins} meEmail={user.email.toLowerCase()} />
+      <div className="slab" style={{ maxWidth: 960, marginTop: 28, gap: 6 }}>
+        <div className="section-title">Workflow integrations</div>
+        <span className="small muted">
+          The integrations list is run by the Workflows team. Admins can edit it and choose who maintains it.{" "}
+          <Link href="/admin/integrations" style={{ textDecoration: "underline" }}>
+            Open Integrations
+          </Link>
+        </span>
+      </div>
       <div style={{ maxWidth: 960, marginTop: 28 }}>
         <DigestPanel
           settings={settings}
