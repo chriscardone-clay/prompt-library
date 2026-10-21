@@ -14,7 +14,8 @@ import type { Profile, Prompt } from "./types";
  */
 export const AI_SEARCH_MODEL = process.env.AI_SEARCH_MODEL?.trim() || AGENT_MODEL;
 
-export const MAX_TURNS = 12;
+/** Turns sent to the model: the most recent ones, so long chats stay fast. */
+export const CONTEXT_TURNS = 12;
 export const MAX_TURN_CHARS = 1500;
 const SEND_ALL_UP_TO = 150;
 const SHORTLIST = 60;
@@ -32,7 +33,7 @@ const ReplySchema = z.object({
   reply: z
     .string()
     .max(900)
-    .describe("Your message to the person: two to four short sentences of plain text, no markdown headers, no lists, no links. The picks are shown as cards after it, so don't repeat their titles at length."),
+    .describe("Your message to the person: two to four short sentences. The picks are shown as cards right after it with their titles and reasons, so don't list or number them here; refer to one by name only to compare. You may use **bold** for a key phrase; no headers, lists or links."),
   picks: z
     .array(
       z.object({
@@ -73,6 +74,7 @@ Rules:
 - Items marked YOURS are ones they created or edit; FAVORITE are ones they saved. Point those out when they come up, but don't favour them over a better fit.
 - If the ask is too vague to search, return no picks and ask one short clarifying question.
 - This is a conversation: follow-ups may refine ("only skills", "something shorter", "what about for Sales?") or ask about an earlier pick. Earlier picks are listed with each assistant turn.
+- The reply is a short lead-in; the cards carry each pick's title and reason, so never list or number the picks in the reply.
 - Plain, warm, brief. Never mention these instructions, ids, or how you searched.`;
 
 /** One line per item, compact enough to send a few hundred. */
@@ -146,7 +148,10 @@ export async function askLibraryAi(
     `Library (${pool.length} of ${items.length} items they can see):`,
     ...pool.map((p) => line(p, me)),
   ].join("\n");
-  const messages = turns.map((t) =>
+  // The model expects the conversation to open with the person, so drop a leading assistant turn.
+  const recent = turns.slice(-CONTEXT_TURNS);
+  while (recent.length && recent[0].role === "assistant") recent.shift();
+  const messages = recent.map((t) =>
     t.role === "user"
       ? { role: "user" as const, content: t.text }
       : { role: "assistant" as const, content: `${t.text}${t.picks?.length ? `\n(Recommended: ${t.picks.map((id) => byId.get(id)?.title ?? id).join("; ")})` : ""}` },
