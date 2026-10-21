@@ -193,7 +193,7 @@ export default async function PromptPage({ params }: { params: Params }) {
               </Link>
             ) : null}
             {prompt.ownerId === user.id ? (
-              <DeleteButton promptId={prompt.id} title={prompt.title} returnHref="/mine" />
+              <DeleteButton promptId={prompt.id} title={prompt.title} returnHref="/?visibility=mine" />
             ) : null}
           </div>
         </div>
