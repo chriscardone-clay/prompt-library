@@ -11,6 +11,13 @@
   min-width: 0;
   padding: 2px 4px 4px;
 }
+.measureClip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
 .measure {
   position: absolute;
   visibility: hidden;

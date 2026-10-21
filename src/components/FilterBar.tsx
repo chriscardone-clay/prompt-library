@@ -132,11 +132,13 @@ export function FilterBar({ facets, textFields = [], resultLabel, onClearAll }: 
 
   return (
     <div ref={wrap} className={styles.wrap}>
-      {/* Off-screen copy of every chip, to measure what fits. */}
-      <div ref={measure} className={styles.measure} aria-hidden="true">
-        {facets.map((f) => (
-          <Chip key={f.key} facet={f} open={false} onOpen={() => {}} />
-        ))}
+      {/* Hidden copy of every chip, to measure what fits. Clipped so it can't widen the page. */}
+      <div className={styles.measureClip} aria-hidden="true">
+        <div ref={measure} className={styles.measure}>
+          {facets.map((f) => (
+            <Chip key={f.key} facet={f} open={false} onOpen={() => {}} />
+          ))}
+        </div>
       </div>
 
       <div ref={row} className={styles.row} role="toolbar" aria-label="Filters">

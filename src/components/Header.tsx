@@ -62,7 +62,7 @@ export async function Header({ user, active = null, slackNudge = false }: Props)
         <Suspense fallback={null}>
           <OpenInNewTab className={`icon-btn ${styles.openOut}`} />
         </Suspense>
-        <AccountMenu user={user} connector={connector} />
+        <AccountMenu user={user} />
       </div>
     </header>
     {slackNudge ? <SlackBanner /> : null}

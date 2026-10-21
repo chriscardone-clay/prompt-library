@@ -9,6 +9,8 @@ import { useCallback, useEffect, useState } from "react";
  */
 export type ThemePref = "light" | "dark" | "system";
 export const THEME_KEY = "theme";
+/** Fired on window when this tab changes the theme, so every switcher on the page agrees. */
+const THEME_EVENT = "themechange";
 
 const isPref = (v: unknown): v is ThemePref => v === "light" || v === "dark" || v === "system";
 
@@ -46,11 +48,14 @@ export function useTheme(): [ThemePref, (p: ThemePref) => void] {
       setPref(p);
       applyPref(p);
     };
+    const onLocal = () => setPref(readPref());
     mq.addEventListener("change", onSystem);
     window.addEventListener("storage", onStorage);
+    window.addEventListener(THEME_EVENT, onLocal);
     return () => {
       mq.removeEventListener("change", onSystem);
       window.removeEventListener("storage", onStorage);
+      window.removeEventListener(THEME_EVENT, onLocal);
     };
   }, []);
 
@@ -62,6 +67,7 @@ export function useTheme(): [ThemePref, (p: ThemePref) => void] {
     }
     setPref(p);
     applyPref(p);
+    window.dispatchEvent(new Event(THEME_EVENT));
   }, []);
 
   return [pref, set];

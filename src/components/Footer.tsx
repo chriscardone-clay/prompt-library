@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AUTHOR_HANDLE, AUTHOR_SLACK_URL } from "@/lib/constants";
 import { canManageIntegrations, getCurrentUser, isAdmin, workflowsEnabled } from "@/lib/data";
+import { ThemeSwitch } from "./ThemeSwitch";
 import styles from "./Footer.module.css";
 
 /**
@@ -14,6 +15,7 @@ export async function Footer() {
   const maintainer = user && !admin ? (await workflowsEnabled()) && (await canManageIntegrations()) : false;
   return (
     <footer className={`${styles.footer} embed-hide`}>
+      <div className={styles.credit}>
       <span>
         Made by{" "}
         <a href={AUTHOR_SLACK_URL} target="_blank" rel="noopener noreferrer" className={styles.handle}>
@@ -40,6 +42,8 @@ export async function Footer() {
           </Link>
         </>
       ) : null}
+      </div>
+      <ThemeSwitch />
     </footer>
   );
 }
