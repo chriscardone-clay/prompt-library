@@ -1,4 +1,4 @@
-import { Files, FlowArrow, Heart, Plugs, Plus } from "@phosphor-icons/react/dist/ssr";
+import { Heart, Plugs } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { Suspense } from "react";
 import { enablementEnabled, isAdmin, workflowsEnabled } from "@/lib/data";
@@ -6,6 +6,7 @@ import { isReviewer } from "@/lib/enablement";
 import type { Profile } from "@/lib/types";
 import { AccountMenu } from "./AccountMenu";
 import { ClayLogo } from "./ClayLogo";
+import { NewMenu } from "./NewMenu";
 import { OpenInNewTab } from "./OpenInNewTab";
 import { SlackBanner } from "./SlackBanner";
 import styles from "./Header.module.css";
@@ -23,38 +24,22 @@ export async function Header({ user, active = null, slackNudge = false }: Props)
   const enablementNav = enablement && ((await isReviewer()) || (await isAdmin()));
   return (
     <>
-    {/* With five or more nav links, the secondary "New" buttons go icon-only on narrower screens. */}
-    <header className={styles.header} data-busy={enablementNav || workflows ? "" : undefined}>
+    <header className={styles.header}>
       <Link href="/" className={styles.brand}>
         <ClayLogo className={styles.logo} />
         <span className={styles.brandLabel}>Prompt library</span>
       </Link>
+      {/* Places in the library. */}
       <nav className={styles.nav} aria-label="Primary">
-        <Link
-          href="/"
-          className={styles.navLink}
-          aria-current={active === "discover" ? "page" : undefined}
-        >
+        <Link href="/" className={styles.navLink} aria-current={active === "discover" ? "page" : undefined}>
           Discover
         </Link>
-        <Link
-          href="/favorites"
-          className={styles.navLink}
-          aria-current={active === "favorites" ? "page" : undefined}
-        >
+        <Link href="/favorites" className={styles.navLink} aria-current={active === "favorites" ? "page" : undefined}>
           <Heart weight="fill" size={14} className={styles.heart} />
           Favorites
         </Link>
-        <Link
-          href="/mine"
-          className={styles.navLink}
-          aria-current={active === "mine" ? "page" : undefined}
-        >
+        <Link href="/mine" className={styles.navLink} aria-current={active === "mine" ? "page" : undefined}>
           Created
-        </Link>
-        <Link href="/connect" className={styles.navLink} aria-current={active === "connect" ? "page" : undefined} title="Use the library in Claude, ChatGPT or Cursor">
-          <Plugs weight="bold" size={14} />
-          Use in AI
         </Link>
         {enablementNav ? (
           <Link href="/enablement" className={styles.navLink} aria-current={active === "enablement" ? "page" : undefined}>
@@ -62,27 +47,24 @@ export async function Header({ user, active = null, slackNudge = false }: Props)
           </Link>
         ) : null}
       </nav>
-      <div className="grow" />
+      {/* Things you do: take the library into your AI tools, add to it, your account. */}
       <div className={styles.actions}>
-        {workflows ? (
-          <Link href="/workflows/new" className={`btn btn-outline ${styles.newWorkflow} ${styles.compact}`} aria-label="New workflow" title="New workflow">
-            <FlowArrow weight="bold" size={14} />
-            <span className={styles.newLabel}>New workflow</span>
-          </Link>
-        ) : null}
-        <Link href="/skills/new" className={`btn btn-outline ${styles.compact}`} aria-label="New skill" title="New skill">
-          <Files weight="bold" size={14} />
-          <span className={styles.newLabel}>New skill</span>
+        <Link
+          href="/connect"
+          className={styles.useInAi}
+          aria-current={active === "connect" ? "page" : undefined}
+          aria-label="Use in AI: Claude, ChatGPT or Cursor"
+          title="Use the library in Claude, ChatGPT or Cursor"
+        >
+          <Plugs weight="bold" size={15} />
+          <span className={styles.useLabel}>Use in AI</span>
         </Link>
-        <Link href="/prompts/new" className="btn btn-primary">
-          <Plus weight="bold" size={14} />
-          <span className={styles.newLabel}>New prompt</span>
-        </Link>
+        <NewMenu workflows={workflows} />
+        <Suspense fallback={null}>
+          <OpenInNewTab className={`icon-btn ${styles.openOut}`} />
+        </Suspense>
+        <AccountMenu user={user} />
       </div>
-      <Suspense fallback={null}>
-        <OpenInNewTab className={`icon-btn ${styles.openOut}`} />
-      </Suspense>
-      <AccountMenu user={user} />
     </header>
     {slackNudge ? <SlackBanner /> : null}
     </>
