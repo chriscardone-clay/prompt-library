@@ -223,6 +223,7 @@ Access rules (RLS): everyone at Clay can read public prompts; private prompts ar
 | `npm run dev` | Next.js dev server |
 | `npm run build` / `npm start` | Production build / serve |
 | `npm run typecheck` | `tsc --noEmit` |
+| `npm run check:contrast -- [--cookies session.json] <url>…` | WCAG contrast check of running pages in light and dark (fails under 4.5:1, or 3:1 for large text). Run it on any page you change. Needs a Chromium (`--chromium` or `CHROMIUM_PATH`, else Playwright's). |
 | `npm run db:start` | Start local Supabase |
 | `npm run db:reset` | Recreate local DB from migrations + seed |
 | `npm run db:push` | Push migrations to the linked cloud project |
