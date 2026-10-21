@@ -1,10 +1,17 @@
 import "server-only";
+import { featureOn } from "./flags";
 import { getSiteUrl } from "./site";
 import { openSlackDm, postSlackMessage, slackConfigured, type SlackMessage } from "./slack";
+import { createServiceClient } from "./supabase/service";
 
 /**
  * Slack messages for Enablement Approved. Best effort: a missing token, an
  * unknown email or a Slack error never fails the review itself.
+ *
+ * While Enablement is behind the ENABLEMENT_APPROVED flag, DMs only go to
+ * people the flag is on for, so nobody hears about a feature they can't see.
+ * The review-request channel post isn't per person: point
+ * ENABLEMENT_SLACK_CHANNEL at a channel of reviewers.
  */
 
 /** Optional channel (id, e.g. C0123…) that hears about new review requests. */
@@ -28,6 +35,16 @@ async function dm(email: string, msg: SlackMessage): Promise<void> {
   } catch (err) {
     console.warn("[enablement] DM failed:", err instanceof Error ? err.message : err);
   }
+}
+
+/** The recipients the Enablement flag is on for, evaluated as their own account (id and email). */
+async function withFlag(emails: string[]): Promise<string[]> {
+  const unique = [...new Set(emails.map((e) => e.trim().toLowerCase()).filter(Boolean))];
+  if (!unique.length) return [];
+  const { data } = await createServiceClient().from("profiles").select("id, email").in("email", unique);
+  const ids = new Map((data ?? []).map((r: { id: string; email: string }) => [r.email.toLowerCase(), r.id]));
+  const on = await Promise.all(unique.map((email) => featureOn("enablement", { id: ids.get(email) ?? email, email }).catch(() => false)));
+  return unique.filter((_, i) => on[i]);
 }
 
 const quote = (s: string) => (s.trim() ? `> ${s.trim().replace(/\n+/g, "\n> ")}` : "");
@@ -56,7 +73,8 @@ export async function notifyDecision(opts: {
           : opts.decision === "declined"
             ? message(`${t} wasn't approved`, [`From ${opts.reviewer}:`, quote(opts.note)], { label: "Open it", url })
             : message(`Enablement removed the approval on ${t}`, [`From ${opts.reviewer}:`, quote(opts.note)], { label: "Open it", url });
-  await Promise.all([...new Set(opts.to.map((e) => e.toLowerCase()))].map((e) => dm(e, msg)));
+  const to = await withFlag(opts.to);
+  await Promise.all(to.map((e) => dm(e, msg)));
 }
 
 /** Let the Enablement channel know there's something to review. */
