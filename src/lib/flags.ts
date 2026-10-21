@@ -41,11 +41,21 @@ export const enablementApproved = flag<boolean, FlagEntities>({
   identify,
 });
 
-export type FeatureName = "workflows" | "enablement";
+export const mcpConnector = flag<boolean, FlagEntities>({
+  key: process.env.CONNECTOR_FLAG_KEY?.trim() || "MCP_CONNECTOR",
+  description: "Claude / ChatGPT / Cursor connector (MCP): /connect, connecting an app, and every request to /api/mcp",
+  adapter: vercelAdapter,
+  defaultValue: false,
+  options: [false, true],
+  identify,
+});
+
+export type FeatureName = "workflows" | "enablement" | "connector";
 
 const FEATURES = {
   workflows: { flag: workflowsBeta, env: "WORKFLOWS_BETA" },
   enablement: { flag: enablementApproved, env: "ENABLEMENT_APPROVED" },
+  connector: { flag: mcpConnector, env: "MCP_CONNECTOR" },
 } as const;
 
 /**

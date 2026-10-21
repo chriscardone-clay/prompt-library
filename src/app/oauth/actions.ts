@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/data";
+import { connectorEnabled, getCurrentUser } from "@/lib/data";
 import { issueCode, parseAuthorize } from "@/lib/mcp/oauth";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -12,6 +12,7 @@ const FIELDS = ["client_id", "redirect_uri", "response_type", "code_challenge", 
 export async function decideAuthorization(formData: FormData) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  if (!(await connectorEnabled())) redirect("/");
   const params: Record<string, string | undefined> = {};
   for (const f of FIELDS) {
     const v = formData.get(f);

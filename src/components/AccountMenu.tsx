@@ -15,7 +15,7 @@ const THEMES: { value: ThemePref; label: string; Icon: typeof Sun }[] = [
   { value: "system", label: "System", Icon: Desktop },
 ];
 
-export function AccountMenu({ user }: { user: Profile }) {
+export function AccountMenu({ user, connector }: { user: Profile; connector: boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const [theme, setTheme] = useTheme();
@@ -75,10 +75,12 @@ export function AccountMenu({ user }: { user: Profile }) {
             ))}
           </div>
           <div className={styles.divider} />
-          <Link href="/connect" className={styles.item} role="menuitem" onClick={() => setOpen(false)}>
-            <Plugs size={16} className="muted" />
-            Use in Claude, ChatGPT or Cursor
-          </Link>
+          {connector ? (
+            <Link href="/connect" className={styles.item} role="menuitem" onClick={() => setOpen(false)}>
+              <Plugs size={16} className="muted" />
+              Use in Claude, ChatGPT or Cursor
+            </Link>
+          ) : null}
           <form action={signOut}>
             <button type="submit" className={styles.item} role="menuitem">
               <SignOut size={16} className="muted" />

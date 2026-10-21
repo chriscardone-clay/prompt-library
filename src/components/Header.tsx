@@ -1,7 +1,7 @@
 import { Heart, Plugs } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { Suspense } from "react";
-import { enablementEnabled, isAdmin, workflowsEnabled } from "@/lib/data";
+import { connectorEnabled, enablementEnabled, isAdmin, workflowsEnabled } from "@/lib/data";
 import { isReviewer } from "@/lib/enablement";
 import type { Profile } from "@/lib/types";
 import { AccountMenu } from "./AccountMenu";
@@ -19,7 +19,7 @@ interface Props {
 }
 
 export async function Header({ user, active = null, slackNudge = false }: Props) {
-  const [workflows, enablement] = await Promise.all([workflowsEnabled(), enablementEnabled()]);
+  const [workflows, enablement, connector] = await Promise.all([workflowsEnabled(), enablementEnabled(), connectorEnabled()]);
   // The review queue: Enablement reviewers, plus admins (who manage the reviewers list).
   const enablementNav = enablement && ((await isReviewer()) || (await isAdmin()));
   return (
@@ -46,6 +46,7 @@ export async function Header({ user, active = null, slackNudge = false }: Props)
       </nav>
       {/* Things you do: take the library into your AI tools, add to it, your account. */}
       <div className={styles.actions}>
+        {connector ? (
         <Link
           href="/connect"
           className={styles.useInAi}
@@ -56,11 +57,12 @@ export async function Header({ user, active = null, slackNudge = false }: Props)
           <Plugs weight="bold" size={15} />
           <span className={styles.useLabel}>Use in AI</span>
         </Link>
+        ) : null}
         <NewMenu workflows={workflows} />
         <Suspense fallback={null}>
           <OpenInNewTab className={`icon-btn ${styles.openOut}`} />
         </Suspense>
-        <AccountMenu user={user} />
+        <AccountMenu user={user} connector={connector} />
       </div>
     </header>
     {slackNudge ? <SlackBanner /> : null}

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { ClayLogo } from "@/components/ClayLogo";
-import { getCurrentUser } from "@/lib/data";
+import { connectorEnabled, getCurrentUser } from "@/lib/data";
 import { linkHost } from "@/lib/skills";
 import { parseAuthorize } from "@/lib/mcp/oauth";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -27,6 +27,21 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
     params[f] = Array.isArray(v) ? v[0] : v;
   }
 
+  if (!(await connectorEnabled())) {
+    return (
+      <main className={styles.page}>
+        <div className={`slab-lg ${styles.card}`}>
+          <ClayLogo className={styles.logo} />
+          <h1 className="display-sm">The connector isn&apos;t on for you yet</h1>
+          <div className="muted">
+            Connecting Claude, ChatGPT or Cursor to the prompt library is in early access. Signed in as <strong>{user.email}</strong>. Ask the
+            prompt library team to add you, then connect again.
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   const parsed = await parseAuthorize(createServiceClient(), params);
   if (!parsed.ok && "redirect" in parsed) redirect(parsed.redirect);
 
@@ -50,7 +65,7 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
             </ul>
             <div className="small muted">
               Signed in as <strong>{user.email}</strong>. You'll return to <strong>{linkHost(parsed.req.redirectUri)}</strong>. You can
-              disconnect any time from Connect to Claude or ChatGPT in your account menu.
+              disconnect any time from Use in AI in the header.
             </div>
             <form action={decideAuthorization} className={styles.actions}>
               {FIELDS.map((f) => (params[f] ? <input key={f} type="hidden" name={f} value={params[f]} /> : null))}

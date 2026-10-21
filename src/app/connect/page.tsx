@@ -1,11 +1,11 @@
 import { ArrowsClockwise, DownloadSimple, LockSimple, MagnifyingGlass, Play, SealCheck, Swap } from "@phosphor-icons/react/dist/ssr";
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { CopyField } from "@/components/CopyField";
 import { Header } from "@/components/Header";
 import { revokeGrant } from "@/app/oauth/actions";
-import { enablementEnabled, getCurrentUser } from "@/lib/data";
+import { connectorEnabled, enablementEnabled, getCurrentUser } from "@/lib/data";
 import { getRequestOrigin } from "@/lib/site";
 import { createClient } from "@/lib/supabase/server";
 import styles from "./connect.module.css";
@@ -40,6 +40,7 @@ function day(iso: string | null) {
 export default async function ConnectPage({ searchParams }: { searchParams: Promise<{ revoked?: string; error?: string }> }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  if (!(await connectorEnabled())) notFound();
   const { revoked, error } = await searchParams;
   const origin = await getRequestOrigin();
   const url = `${origin}/api/mcp`;

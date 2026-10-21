@@ -1,5 +1,6 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { CORS, originOf, preflight } from "@/lib/mcp/http";
+import { featureOn } from "@/lib/flags";
 import { verifyAccessToken } from "@/lib/mcp/oauth";
 import { buildServer } from "@/lib/mcp/server";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -31,6 +32,13 @@ async function handle(request: Request): Promise<Response> {
   const service = createServiceClient();
   const me = await verifyAccessToken(service, token);
   if (!me) return unauthorized("The token is invalid, expired or revoked.");
+  // Early access: the MCP_CONNECTOR flag, checked on every request so turning it off takes effect at once.
+  if (!(await featureOn("connector", { id: me.id, email: me.email }).catch(() => false))) {
+    return new Response(
+      JSON.stringify({ jsonrpc: "2.0", error: { code: -32001, message: "The Clay prompt library connector isn't on for this account yet. Ask the prompt library team for early access." }, id: null }),
+      { status: 403, headers: { ...CORS, "Content-Type": "application/json" } },
+    );
+  }
 
   const server = buildServer(service, me, origin);
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
