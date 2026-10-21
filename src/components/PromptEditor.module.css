@@ -150,15 +150,68 @@
   line-height: 1;
   padding: 7px 10px 6px;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--tone-ink);
+  border: 1px solid var(--tone-ink, var(--fg));
   background: transparent;
-  color: var(--tone-ink);
+  color: var(--tone-ink, var(--fg));
   white-space: nowrap;
   transition: background 120ms var(--ease), color 120ms var(--ease);
 }
 .surfacePill[aria-pressed="true"] {
-  background: var(--tone-ink);
+  background: var(--tone-ink, var(--fg));
   color: var(--oat-100);
+}
+
+/* One-of choices outside an app row (trigger, stage). */
+.choices {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.choice {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: var(--white);
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background 120ms var(--ease), color 120ms var(--ease), border-color 120ms var(--ease);
+}
+.choice:hover {
+  border-color: var(--fg);
+}
+.choice[aria-pressed="true"] {
+  background: var(--fg);
+  border-color: var(--fg);
+  color: var(--oat-100);
+}
+
+/* Always-open fields above the Details accordion (workflows). */
+.inlineFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 24px;
+  padding: 18px;
+  border-radius: 16px;
+  background: var(--bg-raised);
+}
+.inlineField {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.inlineFieldWide {
+  grid-column: 1 / -1;
+}
+@media (max-width: 700px) {
+  .inlineFields {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .visOption {

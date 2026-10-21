@@ -5,10 +5,9 @@ import { createClient } from "@/lib/supabase/server";
 import { avatarIsStale, syncSlackAvatar } from "./avatars";
 import { type Catalog, type CatalogApp, type CatalogIntegration, type CatalogTeam } from "./catalog";
 import { isStage, isTrigger, isVisibility } from "./constants";
-import { workflowsAllowedByEnv } from "./features";
 import { personFromEmail, personFromProfile, UNKNOWN_PERSON } from "./people";
 import { asFiles, asLinks } from "./skills";
-import type { Feedback, Person, Profile, Prompt, PromptNode, PromptVersion } from "./types";
+import { type Approval, type Feedback, NO_APPROVAL, type Person, type Profile, type Prompt, type PromptNode, type PromptVersion } from "./types";
 
 // ── Row shapes returned by PostgREST embeds ─────────────────────────
 interface ProfileRow {
@@ -30,6 +29,13 @@ export interface PromptRow {
   workflow_stage?: string | null;
   integrations?: string[] | null;
   customer_ready?: boolean | null;
+  approval?: string | null;
+  approval_stale?: boolean | null;
+  approved_at?: string | null;
+  approval_due_at?: string | null;
+  approval_use_case?: string | null;
+  approver?: ProfileRow | null;
+  use_case?: { name: string } | null;
   audiences: string[] | null;
   visibility: string;
   owner_id: string;
@@ -49,6 +55,9 @@ export const PROMPT_SELECT = `
   id, kind, title, description, body, notes, files, links, audiences, visibility, owner_id, parent_id,
   fork_note, last_edited_by, created_at, updated_at,
   workflow_trigger, workflow_stage, integrations, customer_ready,
+  approval, approval_stale, approved_at, approval_due_at, approval_use_case,
+  approver:profiles!prompts_approved_by_fkey ( id, email, name, avatar_url ),
+  use_case:enablement_use_cases!prompts_approval_use_case_fkey ( name ),
   owner:profiles!prompts_owner_id_fkey ( id, email, name, avatar_url ),
   prompt_apps ( app, surfaces, model, model_required ),
   prompt_editors ( email, profile:profiles!prompt_editors_profile_id_fkey ( id, email, name, avatar_url ) ),
@@ -58,6 +67,20 @@ export const PROMPT_SELECT = `
 
 function toPerson(p: ProfileRow | null | undefined): Person {
   return p ? personFromProfile(p) : UNKNOWN_PERSON;
+}
+
+function toApproval(r: PromptRow): Approval {
+  const tier = r.approval === "gold" || r.approval === "approved" ? r.approval : "none";
+  if (tier === "none") return NO_APPROVAL;
+  return {
+    tier,
+    current: !r.approval_stale,
+    approvedAt: r.approved_at ?? null,
+    approvedBy: r.approver ? personFromProfile(r.approver) : null,
+    dueAt: r.approval_due_at ?? null,
+    useCaseId: r.approval_use_case ?? null,
+    useCase: r.use_case?.name ?? "",
+  };
 }
 
 export function toPrompt(r: PromptRow): Prompt {
@@ -76,6 +99,7 @@ export function toPrompt(r: PromptRow): Prompt {
       integrations: (r.integrations ?? []).filter((i) => typeof i === "string" && i.trim()),
       customerReady: !!r.customer_ready,
     },
+    approval: toApproval(r),
     audiences: (r.audiences ?? []).filter((a) => typeof a === "string" && a.trim()),
     visibility: isVisibility(r.visibility) ? r.visibility : "public",
     ownerId: r.owner_id,
@@ -132,22 +156,19 @@ export const isAdmin = cache(async (): Promise<boolean> => {
 
 /**
  * Whether the signed-in person can see and create workflows: the
- * WORKFLOWS_BETA boolean in Vercel Flags, targeted per user (flags.ts).
- * Admins always can. The WORKFLOWS_BETA env var (features.ts) is a fallback
- * for local development and hosts without Vercel Flags.
+ * WORKFLOWS_BETA boolean in Vercel Flags, targeted per user (flags.ts), with
+ * the WORKFLOWS_BETA env var as the fallback off Vercel. Admins get no bypass.
  */
 export const workflowsEnabled = cache(async (): Promise<boolean> => {
-  const user = await getCurrentUser();
-  if (!user) return false;
-  if (workflowsAllowedByEnv(user.email)) return true;
-  try {
-    // Imported lazily: flags.ts imports this module for getCurrentUser.
-    const { workflowsBeta } = await import("./flags");
-    if (await workflowsBeta()) return true;
-  } catch (err) {
-    console.warn("[flags] WORKFLOWS_BETA unavailable:", err instanceof Error ? err.message : err);
-  }
-  return isAdmin();
+  // Imported lazily: flags.ts imports this module for getCurrentUser.
+  const { featureOn } = await import("./flags");
+  return featureOn("workflows");
+});
+
+/** Enablement Approved: the ENABLEMENT_APPROVED flag, same rules as workflowsEnabled. */
+export const enablementEnabled = cache(async (): Promise<boolean> => {
+  const { featureOn } = await import("./flags");
+  return featureOn("enablement");
 });
 
 /** Admins and Workflow maintainers (catalog_managers) may edit the Integrations catalog. */
@@ -233,7 +254,7 @@ export const listPrompts = cache(async (): Promise<Prompt[]> => {
     .select(PROMPT_SELECT)
     .order("updated_at", { ascending: false });
   if (error) throw new Error(`listPrompts: ${error.message}`);
-  const all = ((data ?? []) as unknown as PromptRow[]).map(toPrompt);
+  const all = await hideApprovalUnlessEnabled(((data ?? []) as unknown as PromptRow[]).map(toPrompt));
   return (await workflowsEnabled()) ? all : all.filter((p) => p.kind !== "workflow");
 });
 
@@ -249,8 +270,13 @@ export async function getPrompt(id: string): Promise<Prompt | null> {
     throw new Error(`getPrompt: ${error.message}`);
   }
   if (!data) return null;
-  const p = toPrompt(data as unknown as PromptRow);
+  const [p] = await hideApprovalUnlessEnabled([toPrompt(data as unknown as PromptRow)]);
   return p.kind === "workflow" && !(await workflowsEnabled()) ? null : p;
+}
+
+/** Without the ENABLEMENT_APPROVED flag, nothing is approved: no badges, no boost. */
+async function hideApprovalUnlessEnabled(items: Prompt[]): Promise<Prompt[]> {
+  return (await enablementEnabled()) ? items : items.map((p) => (p.approval.tier === "none" ? p : { ...p, approval: NO_APPROVAL }));
 }
 
 /** Lightweight rows for fork counts and the variants tree. */

@@ -126,3 +126,9 @@ html[data-embedded] .navLink {
     width: 100%;
   }
 }
+
+@media (max-width: 1400px) {
+  .header[data-busy] .compact .newLabel {
+    display: none;
+  }
+}

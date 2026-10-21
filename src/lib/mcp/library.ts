@@ -1,10 +1,12 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { approvalBoost, approvalLine, approvalRank, compareRecommended } from "@/lib/approval";
 import { type Catalog, installFor } from "@/lib/catalog";
 import { loadCatalog, PROMPT_SELECT, type PromptRow, toPrompt } from "@/lib/data";
 import { parsePlaceholders } from "@/lib/placeholders";
 import { searchPrompts } from "@/lib/search";
-import { isBinaryFile, type Prompt } from "@/lib/types";
+import { featureOn } from "@/lib/flags";
+import { isBinaryFile, NO_APPROVAL, type Prompt } from "@/lib/types";
 import type { McpUser } from "./oauth";
 
 /**
@@ -19,6 +21,8 @@ export interface Library {
   catalog: Catalog;
   me: McpUser;
   origin: string;
+  /** The person has ENABLEMENT_APPROVED: approval is shown and boosts ranking. */
+  enablement: boolean;
 }
 
 export async function loadLibrary(service: SupabaseClient, me: McpUser, origin: string): Promise<Library> {
@@ -29,14 +33,18 @@ export async function loadLibrary(service: SupabaseClient, me: McpUser, origin: 
   const editable = ((edits ?? []) as { prompt_id: string }[]).map((e) => e.prompt_id);
   const scope = [`visibility.eq.public`, `owner_id.eq.${me.id}`, ...(editable.length ? [`id.in.(${editable.join(",")})`] : [])];
 
-  const [res, catalog] = await Promise.all([
+  const [res, catalog, enablement] = await Promise.all([
     service.from("prompts").select(PROMPT_SELECT).or(scope.join(",")).order("updated_at", { ascending: false }),
     loadCatalog(service),
+    featureOn("enablement", { id: me.id, email: me.email }).catch(() => false),
   ]);
   if (res.error) throw new Error(`loadLibrary: ${res.error.message}`);
   // Workflows are in beta in the app and not offered through the connector yet.
-  const items = ((res.data ?? []) as unknown as PromptRow[]).map(toPrompt).filter((p) => p.kind !== "workflow");
-  return { items, catalog, me, origin };
+  const items = ((res.data ?? []) as unknown as PromptRow[])
+    .map(toPrompt)
+    .filter((p) => p.kind !== "workflow")
+    .map((p) => (enablement || p.approval.tier === "none" ? p : { ...p, approval: NO_APPROVAL }));
+  return { items, catalog, me, origin, enablement };
 }
 
 export function itemUrl(lib: Library, p: Prompt): string {
@@ -75,6 +83,7 @@ export function summarize(lib: Library, p: Prompt, why?: string): string {
     p.description ? `- description: ${p.description.replace(/\s+/g, " ")}` : "",
     p.apps.length ? `- works in: ${appLine(p)}` : "",
     p.audiences.length ? `- teams: ${p.audiences.join(", ")}` : "",
+    p.approval.tier !== "none" ? `- enablement: ${approvalLine(p.approval)}` : "",
     `- by ${p.owner.name} · ${p.upvoteUserIds.length} upvotes · ${p.favoritedBy.length} favorites · updated ${p.updatedAt.slice(0, 10)}`,
   ];
   const placeholders = p.kind === "prompt" ? parsePlaceholders(p.body) : [];
@@ -90,6 +99,8 @@ export interface Filters {
   kind?: "prompt" | "skill";
   app?: string;
   team?: string;
+  /** Only gold standards and Enablement approved items (current version). */
+  approvedOnly?: boolean;
 }
 
 function eq(a: string, b: string) {
@@ -101,7 +112,8 @@ export function applyFilters(items: Prompt[], f: Filters): Prompt[] {
     (p) =>
       (!f.kind || p.kind === f.kind) &&
       (!f.app || p.apps.some((a) => eq(a.app, f.app!))) &&
-      (!f.team || p.audiences.some((t) => eq(t, f.team!))),
+      (!f.team || p.audiences.some((t) => eq(t, f.team!))) &&
+      (!f.approvedOnly || approvalRank(p.approval) > 0),
   );
 }
 
@@ -109,15 +121,21 @@ export function search(lib: Library, query: string, f: Filters, limit: number) {
   const pool = applyFilters(lib.items, f);
   const hits = searchPrompts(pool, query, lib.catalog.apps.map((a) => a.name));
   const byId = new Map(pool.map((p) => [p.id, p]));
-  return hits.slice(0, limit).map((h) => ({ item: byId.get(h.id)!, matched: h.matched, score: h.score }));
+  // Approval reorders what matched (same boost as Discover); it never adds non-matches.
+  return hits
+    .map((h) => ({ item: byId.get(h.id)!, matched: h.matched, score: h.score + approvalBoost(byId.get(h.id)!.approval) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
 }
 
-export type Sort = "top" | "new" | "updated";
+export type Sort = "recommended" | "top" | "new" | "updated";
 
 export function browse(lib: Library, f: Filters, sort: Sort, limit: number, offset: number) {
   const pool = applyFilters(lib.items, f);
   const sorted = [...pool].sort((a, b) =>
-    sort === "top"
+    sort === "recommended"
+      ? compareRecommended(a, b) || popularity(b) - popularity(a)
+      : sort === "top"
       ? popularity(b) - popularity(a) || b.updatedAt.localeCompare(a.updatedAt)
       : sort === "new"
         ? b.createdAt.localeCompare(a.createdAt)

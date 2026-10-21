@@ -1,6 +1,8 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { featureOn } from "@/lib/flags";
 import { getSiteUrl } from "@/lib/site";
+import { lookupSlackUserEmail } from "@/lib/slack";
 import type { SlackMessage } from "@/lib/slack";
 import { AGENT_MODEL, type AnswerResult, answerQuestion, type ThreadContext } from "./answer";
 import { lexicalMatches, loadCandidates } from "./catalog";
@@ -14,6 +16,8 @@ export interface Ask {
   /** Earlier messages when the mention came from inside a thread. */
   thread?: ThreadContext;
   askerName?: string;
+  /** Who asked, for per-person flags (ENABLEMENT_APPROVED). Looked up from slackUser when missing. */
+  askerEmail?: string;
   eventId?: string;
   slackUser?: string;
   channel?: string;
@@ -71,7 +75,9 @@ export async function handleAsk(client: SupabaseClient, ask: Ask): Promise<Handl
     };
   } else {
     effectiveQuestion = resolved.question;
-    const loaded = await loadCandidates(client, effectiveQuestion);
+    const email = ask.askerEmail ?? (ask.slackUser ? await lookupSlackUserEmail(ask.slackUser).catch(() => null) : null);
+    const enablement = email ? await featureOn("enablement", { id: email, email }).catch(() => false) : false;
+    const loaded = await loadCandidates(client, effectiveQuestion, enablement);
     candidates = loaded.items.length;
     shortlisted = loaded.shortlisted;
     result = await answerQuestion(ask.question, loaded.items, () => lexicalMatches(client, effectiveQuestion, loaded.items), {

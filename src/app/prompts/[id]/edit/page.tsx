@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { Header } from "@/components/Header";
 import { PromptEditor } from "@/components/PromptEditor";
 import { canEdit, getCatalog, getCurrentUser, getPrompt } from "@/lib/data";
+import { approvalRank } from "@/lib/approval";
 import { personFromProfile } from "@/lib/people";
 import { listShares } from "@/lib/shares";
 import { packDocFiles } from "@/lib/workflows";
@@ -23,6 +24,17 @@ export default async function EditPromptPage({ params }: { params: Promise<{ id:
   return (
     <div className="container">
       <Header user={user} />
+      {approvalRank(prompt.approval) > 0 ? (
+        <div className="slab" style={{ gap: 4, marginTop: 24 }} role="note">
+          <strong className="small">
+            {prompt.approval.tier === "gold" ? "This is a gold standard." : "Enablement approved this version."} Changes to the{" "}
+            {prompt.kind === "prompt" ? "prompt text" : prompt.kind === "skill" ? "skill files" : "workflow .md"} need a re-review.
+          </strong>
+          <span className="small muted">
+            Saving new content turns the Enablement boost off and sends it back to their queue. Title, description, tags and How to use don&apos;t.
+          </span>
+        </div>
+      ) : null}
       <PromptEditor
         mode="edit"
         promptId={prompt.id}

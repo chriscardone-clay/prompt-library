@@ -16,7 +16,9 @@ import { PromptNotes } from "@/components/PromptNotes";
 import { SkillFiles } from "@/components/SkillFiles";
 import { SkillInstall } from "@/components/SkillInstall";
 import { SkillLinks } from "@/components/SkillLinks";
+import { ApprovalBanner, ApprovalPanel } from "@/components/ApprovalPanel";
 import {
+  ApprovalTag,
   AppTag,
   AudienceTag,
   IntegrationTag,
@@ -41,8 +43,10 @@ import { ToastFromQuery } from "@/components/Toast";
 import { VariantsTree } from "@/components/VariantsTree";
 import { VersionHistory } from "@/components/VersionHistory";
 import { VoteButton } from "@/components/VoteButton";
+import { isReviewer, listReviews, listUseCases } from "@/lib/enablement";
 import {
   canEdit,
+  enablementEnabled,
   getCatalog,
   getCurrentUser,
   getPrompt,
@@ -72,12 +76,17 @@ export default async function PromptPage({ params }: { params: Params }) {
   if (!prompt) notFound();
 
   const editable = canEdit(prompt, user);
-  const [nodes, feedback, versions, catalog] = await Promise.all([
+  const [nodes, feedback, versions, catalog, enablementOn] = await Promise.all([
     listPromptNodes(),
     listFeedback(id),
     editable ? listVersions(id) : Promise.resolve([]),
     getCatalog(),
+    enablementEnabled(),
   ]);
+  const [reviews, useCases, reviewer, parentItem] = enablementOn
+    ? await Promise.all([listReviews(id), listUseCases(), isReviewer(), prompt.parentId ? getPrompt(prompt.parentId) : Promise.resolve(null)])
+    : [[], [], false, null];
+  const goldParent = parentItem && parentItem.approval.tier === "gold" && parentItem.approval.current ? { id: parentItem.id, title: parentItem.title } : null;
   const parent = prompt.parentId ? nodes.find((n) => n.id === prompt.parentId) ?? null : null;
   const lastEditor = resolveLastEditor(prompt, nodes, user);
   const isWf = prompt.kind === "workflow";
@@ -85,7 +94,9 @@ export default async function PromptPage({ params }: { params: Params }) {
   const toc = doc ? tableOfContents(doc.content) : [];
   // The customer-ready check is for the people who can fix the doc.
   const findings = doc && editable ? scanForInternal(doc.content) : [];
-  const [shares, origin] = isWf && editable ? await Promise.all([listShares(prompt.id), getRequestOrigin()]) : [[], ""];
+  // Anyone can publish a link once it's customer-ready; RLS shows them the links they published.
+  const canShare = isWf && (editable || prompt.workflow.customerReady);
+  const [shares, origin] = canShare ? await Promise.all([listShares(prompt.id), getRequestOrigin()]) : [[], ""];
 
   const nudge = await shouldNudgeToSlack(user);
   return (
@@ -104,6 +115,7 @@ export default async function PromptPage({ params }: { params: Params }) {
         <div className={styles.head}>
           <div className={styles.headMain}>
             <div className={styles.tags}>
+              <ApprovalTag approval={prompt.approval} />
               {prompt.kind === "skill" ? <SkillTag /> : null}
               {isWf ? (
                 <>
@@ -146,6 +158,7 @@ export default async function PromptPage({ params }: { params: Params }) {
                 ) : null}
               </div>
             ) : null}
+            {enablementOn ? <ApprovalBanner prompt={prompt} reviews={reviews} editable={editable} /> : null}
             <div className={styles.byline}>
               <Avatar person={prompt.owner} size={28} />
               <span className={styles.bylineName}>{prompt.owner.name}</span>
@@ -168,7 +181,7 @@ export default async function PromptPage({ params }: { params: Params }) {
               <GitFork weight="bold" size={15} />
               {isWf ? "Adapt" : "Fork"}
             </Link>
-            {isWf && editable ? (
+            {canShare ? (
               <a href="#links" className="btn btn-outline">
                 <LinkSimple weight="bold" size={15} />
                 Publish link
@@ -232,6 +245,9 @@ export default async function PromptPage({ params }: { params: Params }) {
           </div>
 
           <aside className={styles.side}>
+            {enablementOn ? (
+              <ApprovalPanel prompt={prompt} reviews={reviews} editable={editable} reviewer={reviewer} useCases={useCases} goldParent={goldParent} />
+            ) : null}
             {isWf && toc.length ? (
               <nav className="slab" style={{ gap: 10 }} aria-label="Contents">
                 <div className="section-title">Contents</div>
@@ -264,10 +280,11 @@ export default async function PromptPage({ params }: { params: Params }) {
                 ) : null}
               </div>
             ) : null}
-            {isWf && editable && doc ? (
+            {canShare && doc ? (
               <SharePanel
                 promptId={prompt.id}
                 customerReady={prompt.workflow.customerReady}
+                canManage={editable}
                 attachments={workflowAttachments(prompt.files).map((f) => f.name)}
                 shares={shares}
                 updatedAt={prompt.updatedAt}

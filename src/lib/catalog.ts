@@ -57,6 +57,9 @@ export const REFERENCE_TONE = { bg: "#F0FCFF", fg: "#006F8A" };
 export const ADAPTATION_TONE = { bg: "#F5F3FF", fg: "#6D4CD6" };
 export const READY_TONE = { bg: "#FCFEE2", fg: "#3E5A05" };
 export const NOT_READY_TONE = { bg: "#FEFAE8", fg: "#7A4502" };
+export const GOLD_TONE = { bg: "#FBE189", fg: "#4A2C00" };
+export const APPROVED_TONE = { bg: "#EEF773", fg: "#102B03" };
+export const STALE_TONE = { bg: "#F4F3F0", fg: "#66645F" };
 
 export interface Tone {
   bg: string;

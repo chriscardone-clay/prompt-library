@@ -73,7 +73,7 @@ interface ShareRow {
 
 const isExpired = (r: Pick<ShareRow, "expires_at">) => !!r.expires_at && new Date(r.expires_at).getTime() <= Date.now();
 
-/** Live (not revoked) links for a workflow, read through the user's client: RLS lets only owners and editors see them. */
+/** Live (not revoked) links for a workflow, read through the user's client: RLS shows owners and editors every link, everyone else the ones they published. */
 export async function listShares(promptId: string): Promise<ShareSummary[]> {
   const supabase = await createClient();
   const { data, error } = await supabase

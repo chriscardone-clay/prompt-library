@@ -69,9 +69,11 @@ export const SKILL_BUCKET = "skill-files";
 export const SKILL_TEMPLATE =
   "---\nname: my-skill\ndescription: One sentence on what this skill does and when to use it.\n---\n\n# My skill\n\n## When to use\n\n## Steps\n\n1. \n2. \n\n## Output format\n";
 
-export const SORTS = ["top", "new", "updated"] as const;
+/** "recommended" (gold standards, then Enablement approved, then top rated) needs ENABLEMENT_APPROVED. */
+export const SORTS = ["recommended", "top", "new", "updated"] as const;
 export type Sort = (typeof SORTS)[number];
 export const SORT_LABELS: Record<Sort, string> = {
+  recommended: "Recommended",
   top: "Top rated",
   new: "Newest",
   updated: "Recently updated",

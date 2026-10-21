@@ -11,6 +11,22 @@ export interface WorkflowMeta {
 
 export const EMPTY_WORKFLOW: WorkflowMeta = { trigger: "", stage: "", integrations: [], customerReady: false };
 
+/** Enablement's verdict on an item (see docs/specs/enablement.md). */
+export type ApprovalTier = "none" | "approved" | "gold";
+export interface Approval {
+  tier: ApprovalTier;
+  /** False once the reviewed content changed: shown as "approved earlier version" and not boosted. */
+  current: boolean;
+  approvedAt: string | null;
+  approvedBy: Person | null;
+  /** When Enablement should look at it again. */
+  dueAt: string | null;
+  useCaseId: string | null;
+  useCase: string;
+}
+
+export const NO_APPROVAL: Approval = { tier: "none", current: false, approvedAt: null, approvedBy: null, dueAt: null, useCaseId: null, useCase: "" };
+
 export interface Profile {
   id: string;
   email: string;
@@ -83,6 +99,8 @@ export interface Prompt {
   files: SkillFile[];
   links: SkillLink[];
   workflow: WorkflowMeta;
+  /** Enablement approval; NO_APPROVAL for people without the ENABLEMENT_APPROVED flag. */
+  approval: Approval;
   /** Teams (from the catalog) this is for; at least one. */
   audiences: string[];
   visibility: Visibility;

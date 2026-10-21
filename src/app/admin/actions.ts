@@ -310,7 +310,8 @@ export async function askAssistant(question: string, threadText?: string): Promi
   const thread = lines.length ? { root: lines[0], others: lines.slice(1) } : undefined;
   const { data: claims } = await supabase.auth.getClaims();
   try {
-    const handled = await handleAsk(supabase, { source: "admin-test", question: q, thread, askerName: (claims?.claims?.email as string | undefined)?.split("@")[0] });
+    const askerEmail = (claims?.claims?.email as string | undefined)?.toLowerCase();
+    const handled = await handleAsk(supabase, { source: "admin-test", question: q, thread, askerName: askerEmail?.split("@")[0], askerEmail });
     revalidatePath("/admin");
     return {
       ok: true,

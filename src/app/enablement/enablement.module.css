@@ -1,0 +1,231 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-top: 24px;
+}
+.tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--warm-line);
+}
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.tab:hover {
+  color: var(--fg);
+  text-decoration: none;
+}
+.tab[aria-current="page"] {
+  color: var(--fg);
+  border-bottom-color: var(--fg);
+}
+.count {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 11px;
+  background: var(--bg-raised);
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+
+.queue {
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 960px) {
+  .queue {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--bg-raised);
+  border-radius: 20px;
+  padding: 8px;
+}
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  color: inherit;
+}
+.item:hover {
+  text-decoration: none;
+  background: var(--oat-100);
+}
+.item[aria-current="true"] {
+  background: var(--oat-100);
+  border-color: var(--border-strong);
+}
+.itemTitle {
+  font-weight: 600;
+  font-size: 15px;
+}
+.empty {
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+.pane {
+  background: var(--white);
+  border: 1px solid var(--grey-line);
+  border-radius: 20px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+.paneHead {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.note {
+  background: var(--bg-raised);
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  white-space: pre-wrap;
+}
+.label {
+  font-size: 14px;
+  font-weight: 600;
+}
+.hint {
+  font-size: 12.5px;
+  color: var(--fg-muted);
+}
+.diff {
+  border: 1px solid var(--grey-line);
+  border-radius: 12px;
+  overflow: auto;
+  max-height: 420px;
+  background: var(--bg-code, var(--bg-raised));
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.diff > div {
+  padding: 1px 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.add {
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+}
+.del {
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in oklab, currentColor 40%, transparent);
+}
+.gap {
+  color: var(--fg-muted);
+  background: var(--bg-raised);
+}
+.rubric {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rubricRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--grey-line);
+  background: var(--oat-100);
+  font-size: 14px;
+  cursor: pointer;
+}
+.rubricRow input {
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--fg);
+  flex: none;
+}
+.two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+@media (max-width: 640px) {
+  .two {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 16px;
+  border-top: 1px solid var(--warm-line);
+}
+.danger {
+  color: var(--danger-fg);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.table th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--fg-muted);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--warm-line);
+}
+.table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--warm-line);
+  vertical-align: middle;
+}
+.tableWrap {
+  overflow-x: auto;
+  background: var(--white);
+  border: 1px solid var(--grey-line);
+  border-radius: 20px;
+}
+.inline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.inline :global(.input) {
+  flex: 1 1 200px;
+  min-width: 0;
+  width: auto;
+}

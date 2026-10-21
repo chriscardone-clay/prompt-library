@@ -73,7 +73,7 @@ Nothing is ever added to a downloaded file: no footer, no source line, no versio
 
 Any workflow marked customer-ready can be **published** to a public, read-only URL that a customer opens without a Clay login. This is the first page on the site that doesn't require a clay.com login, so it is built as a separate surface with nothing shared with the signed-in app.
 
-**Who.** The owner and editors can publish, see the link list and revoke links. Republishing or revoking is recorded in the item's activity.
+**Who.** Anyone at Clay can publish a link once the owner or an editor has marked the workflow customer-ready (only they can mark it). You see, update and revoke the links you published; the owner and editors see and can revoke every link.
 
 **What the link serves.**
 - The link is **pinned to a snapshot** taken at publish time: the `.md`, the attachments chosen at publish, the title and the description. Later edits never leak through a live link. The item page shows "Published version is behind. Update link" when the item has changed since. Updating keeps the URL and replaces the snapshot.
@@ -145,7 +145,7 @@ RLS: owners and editors of the item can select their own item's shares. Inserts,
 - **Actions:** Download .md (primary) · Publish link · Copy Markdown · Download bundle (only with attachments) · Adapt (fork) · Favorite · Upvote.
 - On a fork, an "Adapted for …" line under the title links to the original.
 - **Main column:** a **Rendered / Source** toggle. Rendered uses GFM (tables, task lists, fenced code), turns headings into anchors and leaves out raw HTML. Code blocks keep whitespace and scroll sideways; they never wrap, because flow-tree diagrams depend on that. Source shows the exact file with line numbers.
-- **Side column:** a table of contents from H2/H3 that stays in place while scrolling and highlights the current section. Below it: trigger, integrations, **Published links** (owner and editors only), the apps and model card, links ("Open in Clay"), attachments, teams and editors.
+- **Side column:** a table of contents from H2/H3 that stays in place while scrolling and highlights the current section. Below it: trigger, integrations, **Published links** (anyone, once customer-ready), the apps and model card, links ("Open in Clay"), attachments, teams and editors.
 - "How to use", feedback, the variants tree and version history keep their current placement.
 - Long docs: a 32 KB file must render with no visible lag, and so must a 1 MB one with a lot of scrolling. Render on the server.
 

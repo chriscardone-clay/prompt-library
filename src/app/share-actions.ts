@@ -22,22 +22,26 @@ export interface PublishInput {
   attachments: string[];
 }
 
-/** The workflow, if the signed-in person may publish links for it. */
-async function loadForSharing(promptId: string): Promise<{ prompt: Prompt; uid: string; service: Service } | { error: string }> {
+/**
+ * The workflow, if the signed-in person may publish links for it: anyone who
+ * can see it, once its owner or an editor has marked it customer-ready.
+ */
+async function loadForSharing(promptId: string): Promise<{ prompt: Prompt; uid: string; manager: boolean; service: Service } | { error: string }> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!(await workflowsEnabled())) return { error: "Workflows aren't available to you yet." };
   const prompt = await getPrompt(promptId);
   if (!prompt || prompt.kind !== "workflow") return { error: "Workflow not found." };
-  if (!canEdit(prompt, user)) return { error: "Only the owner and editors can publish links." };
-  if (!prompt.workflow.customerReady) return { error: "Mark the workflow customer-ready before publishing a link." };
+  if (!prompt.workflow.customerReady) {
+    return { error: canEdit(prompt, user) ? "Mark the workflow customer-ready before publishing a link." : "Its owner hasn't marked it customer-ready yet." };
+  }
   let service: Service;
   try {
     service = createServiceClient();
   } catch {
     return { error: "Publishing links isn't set up on this server (SUPABASE_SERVICE_ROLE_KEY)." };
   }
-  return { prompt, uid: user.id, service };
+  return { prompt, uid: user.id, manager: canEdit(prompt, user), service };
 }
 
 /** Copy the chosen attachments into the share's own folder and return their entries. */
@@ -105,11 +109,13 @@ export async function publishShare(promptId: string, input: PublishInput): Promi
   return { ok: true, data: { id, url: `${await getRequestOrigin()}/s/${token}` } };
 }
 
-/** The share row, if the signed-in person can see it (RLS: owners and editors of its workflow). */
-async function ownShare(shareId: string): Promise<{ prompt_id: string; attachments: unknown } | null> {
+type ShareRef = { prompt_id: string; attachments: unknown; created_by: string | null };
+
+/** The share row, if the signed-in person can see it (RLS: whoever published it, plus the workflow's owner and editors). */
+async function ownShare(shareId: string): Promise<ShareRef | null> {
   const supabase = await createClient();
-  const { data } = await supabase.from("workflow_shares").select("prompt_id, attachments").eq("id", shareId).is("revoked_at", null).maybeSingle();
-  return (data as { prompt_id: string; attachments: unknown } | null) ?? null;
+  const { data } = await supabase.from("workflow_shares").select("prompt_id, attachments, created_by").eq("id", shareId).is("revoked_at", null).maybeSingle();
+  return (data as ShareRef | null) ?? null;
 }
 
 /** Point an existing link at the workflow as it is now. The URL stays the same. */
@@ -118,7 +124,8 @@ export async function updateShare(shareId: string): Promise<ActionResult> {
   if (!share) return { ok: false, error: "Link not found." };
   const ctx = await loadForSharing(share.prompt_id);
   if ("error" in ctx) return { ok: false, error: ctx.error };
-  const { prompt, service } = ctx;
+  const { prompt, service, uid, manager } = ctx;
+  if (!manager && share.created_by !== uid) return { ok: false, error: "Only whoever published this link, the owner or an editor can update it." };
   const names = (Array.isArray(share.attachments) ? share.attachments : [])
     .map((a) => (a && typeof a === "object" ? String((a as { name?: unknown }).name ?? "") : ""))
     .filter(Boolean);
@@ -141,7 +148,9 @@ export async function revokeShare(shareId: string): Promise<ActionResult> {
   const share = await ownShare(shareId);
   if (!share) return { ok: false, error: "Link not found." };
   const prompt = await getPrompt(share.prompt_id);
-  if (!prompt || !canEdit(prompt, user)) return { ok: false, error: "Only the owner and editors can revoke links." };
+  if (!prompt || (!canEdit(prompt, user) && share.created_by !== user.id)) {
+    return { ok: false, error: "Only whoever published this link, the owner or an editor can revoke it." };
+  }
   let service: Service;
   try {
     service = createServiceClient();

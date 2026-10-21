@@ -92,7 +92,7 @@ import skillStyles from "./Skill.module.css";
 export type EditorMode = "create" | "edit" | "fork";
 /** How a new skill arrives: pick a route first, then the form appears. */
 type Route = "" | "upload" | "write" | "link" | "existing";
-type Section = "" | "apps" | "auds" | "vis" | "team" | "trigger" | "integ" | "stage" | "ready";
+type Section = "" | "apps" | "auds" | "vis" | "team" | "ready";
 
 interface Props {
   mode: EditorMode;
@@ -545,9 +545,6 @@ export function PromptEditor({
   const audSummary = d.audiences.length ? d.audiences.join(", ") : "Pick at least one team";
   const visSummary = d.visibility === "public" ? "Everyone at Clay" : "Only you and your editors";
   const teamSummary = d.editors.length ? `You and ${d.editors.length} other${d.editors.length === 1 ? "" : "s"}` : "Just you";
-  const triggerSummary = wf.trigger ? TRIGGER_LABELS[wf.trigger] : "Not set";
-  const integSummary = wf.integrations.length ? wf.integrations.join(", ") : "None yet";
-  const stageSummary = wf.stage ? STAGE_LABELS[wf.stage] : "Draft";
   const readySummary = wf.customerReady
     ? "Ready to send to customers"
     : findings.length
@@ -1177,6 +1174,87 @@ export function PromptEditor({
             />
           </label>
 
+          {isWf ? (
+            <div className={styles.inlineFields}>
+              <div className={styles.inlineField}>
+                <span className="label">Trigger</span>
+                <div className={styles.choices} role="group" aria-label="Trigger">
+                  {WORKFLOW_TRIGGERS.map((t) => (
+                    <button key={t} type="button" className={styles.choice} aria-pressed={wf.trigger === t} onClick={() => setWf({ trigger: wf.trigger === t ? "" : t })}>
+                      {TRIGGER_LABELS[t]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className={styles.inlineField}>
+                <span className="label">Stage</span>
+                <div className={styles.choices} role="group" aria-label="Stage">
+                  {WORKFLOW_STAGES.map((st) => (
+                    <button key={st} type="button" className={styles.choice} aria-pressed={(wf.stage || "draft") === st} onClick={() => setWf({ stage: st })}>
+                      {STAGE_LABELS[st]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className={`${styles.inlineField} ${styles.inlineFieldWide}`}>
+                <span className="label">Integrations</span>
+                  <div className="stack" style={{ gap: 12 }}>
+                    {wf.integrations.length ? (
+                      <div className="row gap-2 wrap">
+                        {wf.integrations.map((i) => (
+                          <button key={i} type="button" className={styles.routeChip} aria-pressed onClick={() => removeIntegration(i)} aria-label={`Remove ${i}`}>
+                            {i}
+                            <X weight="bold" size={11} />
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    {wf.integrations.some((i) => !catalogIntegration(catalog, i)) && catalog.integrations?.length ? (
+                      <span className="tiny muted">
+                        Not in the list yet: {wf.integrations.filter((i) => !catalogIntegration(catalog, i)).join(", ")}. The Workflows team
+                        can add it to the list.
+                      </span>
+                    ) : null}
+                    <div className="row gap-2 wrap">
+                      {integrationNames.filter((n) => !wf.integrations.some((x) => x.toLowerCase() === n.toLowerCase())).map((n) => (
+                        <button key={n} type="button" className={styles.routeChip} onClick={() => addIntegration(n)}>
+                          <Plus weight="bold" size={11} />
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                    <div className={styles.inviteRow}>
+                      <input
+                        className={styles.inviteInput}
+                        value={intInput}
+                        onChange={(e) => setIntInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            addIntegration(intInput);
+                            setIntInput("");
+                          }
+                        }}
+                        placeholder="Another integration"
+                        aria-label="Add an integration"
+                        maxLength={40}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={() => {
+                          addIntegration(intInput);
+                          setIntInput("");
+                        }}
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+              </div>
+            </div>
+          ) : null}
+
           {/* ── Details accordion ── */}
           <div className={styles.details}>
             <div className="stack" style={{ gap: 2 }}>
@@ -1285,97 +1363,6 @@ export function PromptEditor({
 
             {isWf ? (
               <>
-                {section(
-                  "trigger",
-                  "Trigger",
-                  "What starts a run",
-                  triggerSummary,
-                  true,
-                  false,
-                  <div className={styles.surfacePills} role="group" aria-label="Trigger">
-                    {WORKFLOW_TRIGGERS.map((t) => (
-                      <button key={t} type="button" className={styles.surfacePill} aria-pressed={wf.trigger === t} onClick={() => setWf({ trigger: wf.trigger === t ? "" : t })}>
-                        {TRIGGER_LABELS[t]}
-                      </button>
-                    ))}
-                  </div>,
-                )}
-                {section(
-                  "integ",
-                  "Integrations",
-                  "Tools it reads from or writes to",
-                  integSummary,
-                  true,
-                  false,
-                  <div className="stack" style={{ gap: 12 }}>
-                    {wf.integrations.length ? (
-                      <div className="row gap-2 wrap">
-                        {wf.integrations.map((i) => (
-                          <button key={i} type="button" className={styles.routeChip} aria-pressed onClick={() => removeIntegration(i)} aria-label={`Remove ${i}`}>
-                            {i}
-                            <X weight="bold" size={11} />
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                    {wf.integrations.some((i) => !catalogIntegration(catalog, i)) && catalog.integrations?.length ? (
-                      <span className="tiny muted">
-                        Not in the list yet: {wf.integrations.filter((i) => !catalogIntegration(catalog, i)).join(", ")}. The Workflows team
-                        can add it to the list.
-                      </span>
-                    ) : null}
-                    <div className="row gap-2 wrap">
-                      {integrationNames.filter((n) => !wf.integrations.some((x) => x.toLowerCase() === n.toLowerCase())).map((n) => (
-                        <button key={n} type="button" className={styles.routeChip} onClick={() => addIntegration(n)}>
-                          <Plus weight="bold" size={11} />
-                          {n}
-                        </button>
-                      ))}
-                    </div>
-                    <div className={styles.inviteRow}>
-                      <input
-                        className={styles.inviteInput}
-                        value={intInput}
-                        onChange={(e) => setIntInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            addIntegration(intInput);
-                            setIntInput("");
-                          }
-                        }}
-                        placeholder="Another integration"
-                        aria-label="Add an integration"
-                        maxLength={40}
-                      />
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        onClick={() => {
-                          addIntegration(intInput);
-                          setIntInput("");
-                        }}
-                      >
-                        Add
-                      </button>
-                    </div>
-                  </div>,
-                )}
-                {section(
-                  "stage",
-                  "Stage",
-                  "How far along it is",
-                  stageSummary,
-                  true,
-                  false,
-                  <div className={styles.surfacePills} role="group" aria-label="Stage">
-                    {WORKFLOW_STAGES.map((st) => (
-                      <button key={st} type="button" className={styles.surfacePill} aria-pressed={(wf.stage || "draft") === st} onClick={() => setWf({ stage: st })}>
-                        {STAGE_LABELS[st]}
-                      </button>
-                    ))}
-                  </div>,
-                )}
                 {section(
                   "ready",
                   "Customer-ready",
