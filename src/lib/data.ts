@@ -171,6 +171,12 @@ export const enablementEnabled = cache(async (): Promise<boolean> => {
   return featureOn("enablement");
 });
 
+/** The connector (MCP): the MCP_CONNECTOR flag, same rules as workflowsEnabled. */
+export const connectorEnabled = cache(async (): Promise<boolean> => {
+  const { featureOn } = await import("./flags");
+  return featureOn("connector");
+});
+
 /** Admins and Workflow maintainers (catalog_managers) may edit the Integrations catalog. */
 export const canManageIntegrations = cache(async (): Promise<boolean> => {
   const supabase = await createClient();
