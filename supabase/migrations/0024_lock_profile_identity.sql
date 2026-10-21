@@ -7,7 +7,7 @@
 
 -- 1. Signed-in people may update only the columns the app writes for them:
 --    the Slack photo sync and the Slack membership cache.
-revoke update on public.profiles from authenticated;
+revoke update on public.profiles from anon, authenticated;
 grant update (avatar_url, avatar_synced_at, slack_user_id, slack_in_channel, slack_checked_at)
   on public.profiles to authenticated;
 
@@ -28,3 +28,12 @@ create unique index if not exists profiles_email_lower_key on public.profiles (l
 --    whoever had claimed the address now points at its real owner (or stays
 --    pending until they sign in).
 update public.prompt_editors set email = email;
+
+-- 5. 0020's column grants on the connector tables didn't narrow anything:
+--    Supabase's default privileges had already granted every privilege on new
+--    public tables to anon and authenticated. Reset them to what 0020 meant.
+--    Everything else goes through the service role.
+revoke all on public.mcp_clients, public.mcp_auth_codes, public.mcp_grants from anon, authenticated;
+grant select on public.mcp_clients to authenticated;
+grant select (id, client_id, user_id, scope, created_at, last_used_at, revoked_at) on public.mcp_grants to authenticated;
+grant update (revoked_at) on public.mcp_grants to authenticated;
