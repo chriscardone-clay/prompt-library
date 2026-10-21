@@ -48,6 +48,11 @@ export const itemShape = {
   visibility: z.enum(["public", "private"]).describe("Ask the person. public = everyone at Clay can find it; private = only them and editors"),
   links: z.array(z.object({ label: z.string().max(120).optional(), url: z.string().url() })).max(20).optional().describe("Where it lives or is saved, e.g. a Claude project or custom GPT"),
   editors: z.array(z.string().email()).max(20).optional().describe("Teammates (@clay.com) who may edit it too"),
+  forked_from: z
+    .string()
+    .optional()
+    .describe("When this is the person's own version of a library item they can't edit (e.g. improved from this chat): that item's id. Saves it as a linked fork"),
+  fork_note: z.string().max(200).optional().describe("With forked_from: what's different in this version, e.g. \"Shorter, adds a pricing section\""),
 };
 const itemSchema = z.object(itemShape);
 export type ItemInput = z.infer<typeof itemSchema>;
@@ -56,6 +61,8 @@ export interface Prepared {
   ok: boolean;
   error?: string;
   draft?: PromptDraft;
+  /** The item this is a fork of (forked_from), when it exists and the person can see it. */
+  parent?: { id: string; title: string };
   warnings: string[];
   similar: { id: string; title: string; url: string }[];
 }
@@ -80,7 +87,7 @@ function toDraft(input: ItemInput): PromptDraft {
     apps: input.apps.map((a) => ({ app: a.app, surfaces: a.surfaces ?? [], model: a.model ?? "", required: !!a.model_required })),
     audiences: input.teams,
     visibility: input.visibility,
-    forkNote: "",
+    forkNote: (input.fork_note ?? "").trim(),
     editors: input.editors ?? [],
   };
 }
@@ -150,8 +157,13 @@ export function prepare(lib: Library, raw: ItemInput): Prepared {
   const warnings = checked.warnings;
   const input: ItemInput = { ...raw, apps: checked.apps!, teams: checked.teams! };
 
+  const parentItem = raw.forked_from ? lib.items.find((x) => x.id === raw.forked_from!.trim() || raw.forked_from!.trim().endsWith(`/prompts/${x.id}`)) : undefined;
+  if (raw.forked_from && !parentItem) return { ok: false, error: `No item ${raw.forked_from} that you can see to fork from.`, warnings, similar: [] };
+  if (parentItem && parentItem.kind !== raw.kind) return { ok: false, error: `That item is a ${parentItem.kind}; save the fork as a ${parentItem.kind} too.`, warnings, similar: [] };
+  const parent = parentItem ? { id: parentItem.id, title: parentItem.title } : undefined;
+
   const v = validate(lib, toDraft(input), []);
-  if (!v.ok) return { ok: false, error: v.error, warnings, similar: [] };
+  if (!v.ok) return { ok: false, error: v.error, warnings, similar: [], parent };
   const d = v.data;
   warnings.push(...qualityNotes(d));
 
@@ -163,7 +175,8 @@ export function prepare(lib: Library, raw: ItemInput): Prepared {
       return { id: p.id, title: p.title, url: `${lib.origin}/prompts/${p.id}` };
     });
 
-  return { ok: true, draft: d, warnings, similar };
+  // A fork is meant to resemble its parent; don't flag the parent as a duplicate.
+  return { ok: true, draft: d, warnings, similar: similar.filter((x) => x.id !== parent?.id), parent };
 }
 
 /** What the saved item will look like, for the person to approve. */
@@ -174,6 +187,7 @@ export function previewText(p: Prepared): string {
     `## Preview: ${d.title}`,
     `- kind: ${d.kind}`,
     `- visibility: ${d.visibility}${d.visibility === "public" ? " (everyone at Clay can find it)" : " (only you and editors)"}`,
+    p.parent ? `- your version of: ${p.parent.title} (linked as a fork${d.forkNote ? `: ${d.forkNote}` : ""})` : "",
     d.description ? `- description: ${d.description}` : "",
     `- works in: ${d.apps.map((a) => `${a.app}${a.surfaces.length ? ` (${a.surfaces.join(", ")})` : ""}${a.model ? `, ${a.required ? "requires" : "recommended"} ${a.model}` : ""}`).join("; ")}`,
     `- teams: ${d.audiences.join(", ")}`,
@@ -218,8 +232,8 @@ export async function saveItem(service: SupabaseClient, lib: Library, p: Prepare
     visibility: d.visibility,
     owner_id: me.id,
     last_edited_by: me.id,
-    parent_id: null,
-    fork_note: "",
+    parent_id: p.parent?.id ?? null,
+    fork_note: p.parent ? d.forkNote : "",
   });
   if (error) throw new Error(`saveItem: ${error.message}`);
   const apps = await service

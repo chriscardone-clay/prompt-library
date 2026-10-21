@@ -1,7 +1,8 @@
 /**
- * Minimal zip reader/writer for skill bundles, browser-only (uses
- * TextEncoder/Decoder and DecompressionStream). Written archives use the
- * "store" method (no compression): skills are a handful of files.
+ * Minimal zip reader/writer for skill bundles (TextEncoder/Decoder, Blob and
+ * DecompressionStream). The writer also runs on the server
+ * (/prompts/[id]/skill). Written archives use the "store" method (no
+ * compression): skills are a handful of files.
  */
 
 const CRC_TABLE = (() => {

@@ -1,4 +1,4 @@
-import { Files, FlowArrow, Heart, Plus } from "@phosphor-icons/react/dist/ssr";
+import { Files, FlowArrow, Heart, Plugs, Plus } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { Suspense } from "react";
 import { enablementEnabled, isAdmin, workflowsEnabled } from "@/lib/data";
@@ -12,7 +12,7 @@ import styles from "./Header.module.css";
 
 interface Props {
   user: Profile;
-  active?: "discover" | "mine" | "favorites" | "enablement" | null;
+  active?: "discover" | "mine" | "favorites" | "enablement" | "connect" | null;
   /** Show the "join #auto-clayprompts" banner under the header (decided server-side). */
   slackNudge?: boolean;
 }
@@ -23,8 +23,8 @@ export async function Header({ user, active = null, slackNudge = false }: Props)
   const enablementNav = enablement && ((await isReviewer()) || (await isAdmin()));
   return (
     <>
-    {/* With four nav links, the secondary "New" buttons go icon-only on narrower screens. */}
-    <header className={styles.header} data-busy={enablementNav && workflows ? "" : undefined}>
+    {/* With five or more nav links, the secondary "New" buttons go icon-only on narrower screens. */}
+    <header className={styles.header} data-busy={enablementNav || workflows ? "" : undefined}>
       <Link href="/" className={styles.brand}>
         <ClayLogo className={styles.logo} />
         <span className={styles.brandLabel}>Prompt library</span>
@@ -51,6 +51,10 @@ export async function Header({ user, active = null, slackNudge = false }: Props)
           aria-current={active === "mine" ? "page" : undefined}
         >
           Created
+        </Link>
+        <Link href="/connect" className={styles.navLink} aria-current={active === "connect" ? "page" : undefined} title="Use the library in Claude, ChatGPT or Cursor">
+          <Plugs weight="bold" size={14} />
+          Use in AI
         </Link>
         {enablementNav ? (
           <Link href="/enablement" className={styles.navLink} aria-current={active === "enablement" ? "page" : undefined}>

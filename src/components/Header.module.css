@@ -124,6 +124,12 @@ html[data-embedded] .navLink {
     margin-left: 0;
     order: 3;
     width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .navLink {
+    padding: 8px 10px;
+    white-space: nowrap;
   }
 }
 
