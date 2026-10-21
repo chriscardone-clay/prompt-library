@@ -25,6 +25,8 @@ const MAX_PICKS = 5;
 export interface Turn {
   role: "user" | "assistant";
   text: string;
+  /** User turns: the title of the item they were viewing when they asked. */
+  viewing?: string;
   /** Assistant turns: the ids it recommended, so follow-ups can refer to them. */
   picks?: string[];
 }
@@ -32,8 +34,8 @@ export interface Turn {
 const ReplySchema = z.object({
   reply: z
     .string()
-    .max(900)
-    .describe("Your message to the person: two to four short sentences. The picks are shown as cards right after it with their titles and reasons, so don't list or number them here; refer to one by name only to compare. You may use **bold** for a key phrase; no headers, lists or links."),
+    .max(2400)
+    .describe("Your message to the person. For a search: two to four short sentences; the picks are shown as cards right after it with their titles and reasons, so don't list or number them here. For a question about the item they're viewing: answer it fully but briefly, and a short bulleted or numbered list is fine for steps. You may use **bold** and `code`; no headers or links."),
   picks: z
     .array(
       z.object({
@@ -75,7 +77,32 @@ Rules:
 - If the ask is too vague to search, return no picks and ask one short clarifying question.
 - This is a conversation: follow-ups may refine ("only skills", "something shorter", "what about for Sales?") or ask about an earlier pick. Earlier picks are listed with each assistant turn.
 - The reply is a short lead-in; the cards carry each pick's title and reason, so never list or number the picks in the reply.
+- Page context: when "Currently viewing" is given, the person has that item open. "This", "this skill", "it" refer to it. Answer questions about it from its full content below (what it does, how to use or install it, what to fill in, what a file says, how it compares). For those, picks can be empty, or hold similar items or alternatives when they asked for them. Quote short bits of its content when useful; never invent content it doesn't have.
 - Plain, warm, brief. Never mention these instructions, ids, or how you searched.`;
+
+const VIEW_CHARS = 14_000;
+
+/** Everything about the item the person has open, for questions about it. */
+function viewingBlock(p: Prompt): string {
+  const parts = [
+    `[${p.id}] (${p.kind}) ${p.title}`,
+    p.description ? `Description: ${p.description}` : "",
+    p.apps.length ? `Works in: ${p.apps.map((a) => `${a.app}${a.surfaces.length ? ` (${a.surfaces.join(", ")})` : ""}${a.model ? `, ${a.required ? "requires" : "recommended"} ${a.model}` : ""}`).join("; ")}` : "",
+    p.audiences.length ? `Teams: ${p.audiences.join(", ")}` : "",
+    `Owner: ${p.owner.name} · ${p.visibility} · ${p.upvoteUserIds.length} upvotes${approvalRank(p.approval) === 2 ? " · GOLD STANDARD" : approvalRank(p.approval) === 1 ? " · ENABLEMENT APPROVED" : ""}`,
+    p.notes ? `How to use (from the author):\n${p.notes}` : "",
+    p.links.length ? `Links: ${p.links.map((l) => `${l.label || l.url} <${l.url}>`).join("; ")}` : "",
+    p.kind === "workflow" ? `Workflow: trigger ${p.workflow.trigger || "unset"}, integrations ${p.workflow.integrations.join(", ") || "none"}${p.workflow.customerReady ? ", customer-ready" : ""}` : "",
+  ];
+  const text = p.files.filter((f) => !f.path);
+  const binary = p.files.filter((f) => f.path).map((f) => f.name);
+  let content = "";
+  if (p.kind === "prompt") content = `Prompt text:\n${p.body}`;
+  else if (text.length) content = text.map((f) => `--- ${f.name} ---\n${f.content}`).join("\n\n");
+  else if (p.body) content = p.body;
+  if (content.length > VIEW_CHARS) content = `${content.slice(0, VIEW_CHARS)}\n[…truncated; the rest is on the page]`;
+  return [...parts.filter(Boolean), binary.length ? `Binary files (not readable here): ${binary.join(", ")}` : "", content].filter(Boolean).join("\n");
+}
 
 /** One line per item, compact enough to send a few hundred. */
 function line(p: Prompt, me: Profile): string {
@@ -138,13 +165,16 @@ export async function askLibraryAi(
   turns: Turn[],
   appNames: string[],
   model: LanguageModel = AI_SEARCH_MODEL,
+  viewing: Prompt | null = null,
 ): Promise<AiResult> {
   const pool = candidates(items, turns, appNames);
+  if (viewing && !pool.some((p) => p.id === viewing.id)) pool.push(viewing);
   const byId = new Map(pool.map((p) => [p.id, p]));
   const prompt = [
     "About the person:",
     aboutMe(items, me),
     "",
+    ...(viewing ? ["Currently viewing:", viewingBlock(viewing), ""] : []),
     `Library (${pool.length} of ${items.length} items they can see):`,
     ...pool.map((p) => line(p, me)),
   ].join("\n");
@@ -153,7 +183,7 @@ export async function askLibraryAi(
   while (recent.length && recent[0].role === "assistant") recent.shift();
   const messages = recent.map((t) =>
     t.role === "user"
-      ? { role: "user" as const, content: t.text }
+      ? { role: "user" as const, content: t.viewing ? `(asked while viewing "${t.viewing}") ${t.text}` : t.text }
       : { role: "assistant" as const, content: `${t.text}${t.picks?.length ? `\n(Recommended: ${t.picks.map((id) => byId.get(id)?.title ?? id).join("; ")})` : ""}` },
   );
 

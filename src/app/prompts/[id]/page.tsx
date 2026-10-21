@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
+import { AiPageContext } from "@/components/AiAssistant";
 import { Avatar } from "@/components/Avatar";
 import { DeleteButton } from "@/components/DeleteButton";
 import { FavoriteButton } from "@/components/FavoriteButton";
@@ -101,6 +102,7 @@ export default async function PromptPage({ params }: { params: Params }) {
   return (
     <div className="container">
       <Header user={user} slackNudge={nudge} />
+      <AiPageContext id={prompt.id} title={prompt.title} kind={prompt.kind} />
       <Suspense fallback={null}>
         <ToastFromQuery />
       </Suspense>

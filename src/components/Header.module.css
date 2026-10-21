@@ -100,6 +100,26 @@
   background: var(--bg-raised);
   border-color: var(--bg-raised);
 }
+.askAi {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 39px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.askAi svg {
+  color: var(--tangerine-300);
+}
+.askAi:hover {
+  background: var(--bg-hover);
+}
 .actions :global(.btn) {
   white-space: nowrap;
 }
@@ -142,6 +162,16 @@ html[data-embedded] .useInAi {
 
 
 /* Step down as space runs out, in order of what matters least. */
+@media (max-width: 1180px) {
+  .askAi span {
+    display: none;
+  }
+  .askAi {
+    width: 39px;
+    padding: 0;
+    justify-content: center;
+  }
+}
 @media (max-width: 1040px) {
   .brandLabel {
     display: none;
@@ -172,5 +202,46 @@ html[data-embedded] .useInAi {
   }
   .navLink {
     padding: 8px 10px;
+  }
+}
+
+/* The same steps while Ask AI's sidebar is open on a wide screen: the page is
+   460px narrower than the window, so each step comes 460px earlier. */
+@media (min-width: 1024px) and (max-width: 1640px) {
+  :global(html[data-ai-panel]) .askAi span {
+    display: none;
+  }
+  :global(html[data-ai-panel]) .askAi {
+    width: 39px;
+    padding: 0;
+    justify-content: center;
+  }
+}
+@media (min-width: 1024px) and (max-width: 1500px) {
+  :global(html[data-ai-panel]) .brandLabel {
+    display: none;
+  }
+}
+@media (min-width: 1024px) and (max-width: 1360px) {
+  :global(html[data-ai-panel]) .useLabel {
+    display: none;
+  }
+  :global(html[data-ai-panel]) .useInAi {
+    width: 39px;
+    padding: 0;
+    justify-content: center;
+  }
+}
+@media (min-width: 1024px) and (max-width: 1280px) {
+  :global(html[data-ai-panel]) .header {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+  :global(html[data-ai-panel]) .nav {
+    margin-left: 0;
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
 }

@@ -5,6 +5,7 @@ import { connectorEnabled, enablementEnabled, isAdmin, workflowsEnabled } from "
 import { isReviewer } from "@/lib/enablement";
 import type { Profile } from "@/lib/types";
 import { AccountMenu } from "./AccountMenu";
+import { AskAiButton } from "./AiAssistant";
 import { ClayLogo } from "./ClayLogo";
 import { NewMenu } from "./NewMenu";
 import { OpenInNewTab } from "./OpenInNewTab";
@@ -46,6 +47,7 @@ export async function Header({ user, active = null, slackNudge = false }: Props)
       </nav>
       {/* Things you do: take the library into your AI tools, add to it, your account. */}
       <div className={styles.actions}>
+        <AskAiButton className={styles.askAi} />
         {connector ? (
         <Link
           href="/connect"

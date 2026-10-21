@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import { Suspense } from "react";
+import { AiRoot } from "@/components/AiRoot";
 import { Footer } from "@/components/Footer";
 import { ToastProvider } from "@/components/Toast";
 import "./globals.css";
@@ -75,10 +76,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <ToastProvider>
-          {children}
-          <Suspense fallback={null}>
-            <Footer />
-          </Suspense>
+          {/* Ask AI wraps every page so its sidebar and chat persist across navigation. */}
+          <AiRoot>
+            {children}
+            <Suspense fallback={null}>
+              <Footer />
+            </Suspense>
+          </AiRoot>
         </ToastProvider>
       </body>
     </html>

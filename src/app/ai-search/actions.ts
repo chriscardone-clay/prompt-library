@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { askLibraryAi, MAX_TURN_CHARS, type Turn } from "@/lib/aiSearch";
 import type { Kind } from "@/lib/constants";
-import { aiSearchEnabled, getCatalog, getCurrentUser, listPrompts } from "@/lib/data";
+import { aiSearchEnabled, getCatalog, getCurrentUser, getPrompt, listPrompts } from "@/lib/data";
 import type { ActionResult } from "@/lib/draft";
 import { createClient } from "@/lib/supabase/server";
 import type { Approval, Profile, Prompt } from "@/lib/types";
@@ -31,7 +31,7 @@ export interface AiAnswer {
   fallback: boolean;
 }
 
-export type AiEntry = { role: "user"; text: string } | { role: "assistant"; answer: AiAnswer };
+export type AiEntry = { role: "user"; text: string; viewing?: { id: string; title: string } } | { role: "assistant"; answer: AiAnswer };
 
 export interface AiChat {
   id: string;
@@ -50,6 +50,8 @@ export interface AiChatSummary {
 const StoredTurn = z.object({
   role: z.enum(["user", "assistant"]),
   text: z.string(),
+  /** User turns: the item they had open when they asked. */
+  viewing: z.object({ id: z.string(), title: z.string() }).optional(),
   picks: z.array(z.object({ id: z.string(), why: z.string() })).optional(),
   followUps: z.array(z.string()).optional(),
   fallback: z.boolean().optional(),
@@ -58,6 +60,8 @@ type StoredTurn = z.infer<typeof StoredTurn>;
 
 const AskInput = z.object({
   chatId: z.string().uuid().nullable(),
+  /** The item the person has open, if any; access is re-checked here. */
+  pageId: z.string().uuid().nullable().optional(),
   question: z.string().trim().min(1, "Ask something first.").max(MAX_TURN_CHARS, `Keep it under ${MAX_TURN_CHARS} characters.`),
 });
 
@@ -88,7 +92,7 @@ function toEntries(turns: StoredTurn[], items: Prompt[], user: Profile): AiEntry
   const byId = new Map(items.map((p) => [p.id, p]));
   return turns.map((t) =>
     t.role === "user"
-      ? { role: "user", text: t.text }
+      ? { role: "user", text: t.text, viewing: t.viewing }
       : {
           role: "assistant",
           answer: {
@@ -112,13 +116,13 @@ function parseTurns(raw: unknown): StoredTurn[] {
  * is read as them, so it covers exactly what they can see, with workflows
  * only when their Workflows flag is on.
  */
-export async function askLibrary(input: { chatId: string | null; question: string }): Promise<ActionResult<{ chatId: string; title: string; answer: AiAnswer; canAsk: boolean }>> {
+export async function askLibrary(input: { chatId: string | null; question: string; pageId?: string | null }): Promise<ActionResult<{ chatId: string; title: string; answer: AiAnswer; canAsk: boolean }>> {
   const g = await gate();
   if ("error" in g) return { ok: false, error: g.error };
   const { user } = g;
   const parsed = AskInput.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "That question couldn't be sent." };
-  const { chatId, question } = parsed.data;
+  const { chatId, question, pageId } = parsed.data;
 
   const supabase = await createClient();
   let turns: StoredTurn[] = [];
@@ -129,10 +133,11 @@ export async function askLibrary(input: { chatId: string | null; question: strin
   }
   if (turns.filter((t) => t.role === "user").length >= MAX_QUESTIONS) return { ok: false, error: "This chat is full. Start a new one to keep going." };
 
-  const [items, catalog] = await Promise.all([listPrompts(), getCatalog()]);
-  const asked: StoredTurn[] = [...turns, { role: "user", text: question }];
-  const forModel: Turn[] = asked.map((t) => ({ role: t.role, text: t.text || "(no reply)", picks: t.picks?.map((p) => p.id) }));
-  const result = await askLibraryAi(items, user, forModel, catalog.apps.map((a) => a.name));
+  // getPrompt reads as the person (RLS) and hides workflows without the flag, so a page they can't see adds nothing.
+  const [items, catalog, viewing] = await Promise.all([listPrompts(), getCatalog(), pageId ? getPrompt(pageId).catch(() => null) : Promise.resolve(null)]);
+  const asked: StoredTurn[] = [...turns, { role: "user", text: question, ...(viewing ? { viewing: { id: viewing.id, title: viewing.title } } : {}) }];
+  const forModel: Turn[] = asked.map((t) => ({ role: t.role, text: t.text || "(no reply)", picks: t.picks?.map((p) => p.id), viewing: t.viewing?.title }));
+  const result = await askLibraryAi(items, user, forModel, catalog.apps.map((a) => a.name), undefined, viewing);
   const next: StoredTurn[] = [...asked, { role: "assistant", text: result.reply, picks: result.picks, followUps: result.followUps, fallback: result.fallback }];
 
   let id = chatId;

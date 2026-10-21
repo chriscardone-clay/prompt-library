@@ -23,7 +23,7 @@ import { searchPrompts } from "@/lib/search";
 import type { Profile, Prompt } from "@/lib/types";
 import { Avatar } from "./Avatar";
 import { type Facet, FilterBar, type TextField } from "./FilterBar";
-import { AiSearch } from "./AiSearch";
+import { AiBar } from "./AiAssistant";
 import { FavoriteButton } from "./FavoriteButton";
 import { ApprovalTag, AppTag, SkillTag, WorkflowTag } from "./Tag";
 import { VoteButton } from "./VoteButton";
@@ -487,7 +487,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
         ) : null}
       </div>
 
-      {aiSearchOn ? <AiSearch total={(allPrompts ?? prompts).length} /> : null}
+      {aiSearchOn ? <AiBar /> : null}
 
       {/* ── Toolbar ── */}
       <div className={styles.toolbar}>
