@@ -239,20 +239,128 @@
   }
 }
 
-/* All filters */
-.all {
-  width: 440px;
-}
-.allHead {
+/* Leading Filters button: the one home for every filter. */
+.lead {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 16px 18px 10px;
-  font-size: 16px;
+  flex: none;
 }
-.allList {
-  max-height: min(60vh, 520px);
+.filtersBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: var(--white);
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.filtersBtn:hover {
+  border-color: var(--fg);
+}
+.filtersBtn[aria-expanded="true"] {
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--fg) 14%, transparent);
+}
+.badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--fg);
+  color: var(--oat-100);
+  border-radius: var(--radius-pill);
+  padding: 2px 7px;
+  line-height: 1.2;
+}
+
+/* Drawer: slides in from the left on desktop, up from the bottom on phones. */
+.drawerLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+.scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(27, 26, 24, 0.32);
+  animation: fadeIn 160ms var(--ease);
+}
+.drawer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(420px, 92vw);
+  background: var(--white);
+  border-right: 1px solid var(--grey-line);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.16);
+  display: flex;
+  flex-direction: column;
+  animation: slideIn 220ms var(--ease);
+}
+@keyframes slideIn {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer,
+  .scrim {
+    animation: none;
+  }
+}
+.drawerHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 16px 14px 20px;
+  border-bottom: 1px solid var(--warm-line);
+}
+.drawerTitle {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 20px;
+  letter-spacing: -0.015em;
+}
+.drawerBody {
+  flex: 1;
   overflow-y: auto;
+}
+.textSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 20px;
+}
+.textField {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+.allItem {
+  border-top: 1px solid var(--warm-line);
 }
 .allRow {
   display: grid;
@@ -260,9 +368,8 @@
   align-items: center;
   gap: 12px;
   width: 100%;
-  padding: 12px 18px;
+  padding: 14px 20px;
   border: 0;
-  border-top: 1px solid var(--warm-line);
   background: transparent;
   color: var(--fg);
   font-size: 14px;
@@ -288,10 +395,10 @@
   font-weight: 500;
 }
 .allOpen .search {
-  margin: 0 12px 4px;
+  margin: 0 14px 4px;
 }
 .allOpen {
-  padding-bottom: 4px;
+  padding: 0 6px 8px;
 }
 
 /* Phones: every popover is a bottom sheet over a scrim, with room to tap. */
@@ -309,8 +416,7 @@
     padding-bottom: env(safe-area-inset-bottom);
     box-shadow: 0 0 0 100vmax rgba(27, 26, 24, 0.32), 0 -8px 24px rgba(0, 0, 0, 0.12);
   }
-  .options,
-  .allList {
+  .options {
     max-height: none;
     flex: 1;
     overflow-y: auto;
@@ -318,9 +424,19 @@
   .option {
     min-height: 44px;
   }
-  .foot .btn-primary,
   .foot :global(.btn) {
     flex: 1;
+  }
+  .drawer {
+    top: auto;
+    right: 0;
+    width: auto;
+    max-height: 88vh;
+    border-right: 0;
+    border-top: 1px solid var(--grey-line);
+    border-radius: 24px 24px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+    animation-name: slideUp;
   }
   .allRow {
     grid-template-columns: 130px minmax(0, 1fr) 14px;
