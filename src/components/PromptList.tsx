@@ -23,6 +23,7 @@ import { searchPrompts } from "@/lib/search";
 import type { Profile, Prompt } from "@/lib/types";
 import { Avatar } from "./Avatar";
 import { type Facet, FilterBar, type TextField } from "./FilterBar";
+import { AiSearch } from "./AiSearch";
 import { FavoriteButton } from "./FavoriteButton";
 import { ApprovalTag, AppTag, SkillTag, WorkflowTag } from "./Tag";
 import { VoteButton } from "./VoteButton";
@@ -43,6 +44,8 @@ interface Props {
   /** Admins and Workflow maintainers get a link to the Integrations catalog. */
   manageIntegrations?: boolean;
   /** ENABLEMENT_APPROVED: the Recommended sort and the Enablement filter. */
+  /** Ask AI bar above the filters (AI_SEARCH flag). */
+  aiSearchOn?: boolean;
   enablementOn?: boolean;
 }
 
@@ -76,7 +79,7 @@ function contentsOf(p: Prompt): string {
   return [p.body, ...p.files.filter((f) => !f.path).map((f) => f.content)].join("\n").toLowerCase();
 }
 
-export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn = false, manageIntegrations = false, enablementOn = false }: Props) {
+export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn = false, manageIntegrations = false, enablementOn = false, aiSearchOn = false }: Props) {
   const defaultSort: Sort = enablementOn ? "recommended" : "top";
   const sorts = enablementOn ? SORTS : SORTS.filter((s) => s !== "recommended");
   const params = useSearchParams();
@@ -483,6 +486,8 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
           </div>
         ) : null}
       </div>
+
+      {aiSearchOn ? <AiSearch total={(allPrompts ?? prompts).length} /> : null}
 
       {/* ── Toolbar ── */}
       <div className={styles.toolbar}>

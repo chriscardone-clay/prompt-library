@@ -50,12 +50,22 @@ export const mcpConnector = flag<boolean, FlagEntities>({
   identify,
 });
 
-export type FeatureName = "workflows" | "enablement" | "connector";
+export const aiSearchFlag = flag<boolean, FlagEntities>({
+  key: process.env.AI_SEARCH_FLAG_KEY?.trim() || "AI_SEARCH",
+  description: "Ask AI: natural-language search across the library on Discover, with reasons and follow-ups",
+  adapter: vercelAdapter,
+  defaultValue: false,
+  options: [false, true],
+  identify,
+});
+
+export type FeatureName = "workflows" | "enablement" | "connector" | "aiSearch";
 
 const FEATURES = {
   workflows: { flag: workflowsBeta, env: "WORKFLOWS_BETA" },
   enablement: { flag: enablementApproved, env: "ENABLEMENT_APPROVED" },
   connector: { flag: mcpConnector, env: "MCP_CONNECTOR" },
+  aiSearch: { flag: aiSearchFlag, env: "AI_SEARCH" },
 } as const;
 
 /**

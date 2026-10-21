@@ -177,6 +177,12 @@ export const connectorEnabled = cache(async (): Promise<boolean> => {
   return featureOn("connector");
 });
 
+/** Ask AI on Discover: the AI_SEARCH flag, same rules as workflowsEnabled. */
+export const aiSearchEnabled = cache(async (): Promise<boolean> => {
+  const { featureOn } = await import("./flags");
+  return featureOn("aiSearch");
+});
+
 /** Admins and Workflow maintainers (catalog_managers) may edit the Integrations catalog. */
 export const canManageIntegrations = cache(async (): Promise<boolean> => {
   const supabase = await createClient();
