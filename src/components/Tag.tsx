@@ -93,3 +93,13 @@ export function ReadyTag({ ready, showNotReady = false }: { ready: boolean; show
     </span>
   );
 }
+
+/** An integration on a workflow, with its catalog colour as a dot (grey when unlisted). */
+export function IntegrationTag({ name, color }: { name: string; color?: string }) {
+  return (
+    <span className="tag tag-light">
+      <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 3, background: color ?? "var(--oat-300)", flex: "none" }} />
+      {name}
+    </span>
+  );
+}

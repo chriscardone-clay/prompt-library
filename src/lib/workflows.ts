@@ -19,6 +19,11 @@ export function workflowDoc(files: SkillFile[]): SkillFile | undefined {
   return f && !f.path ? f : undefined;
 }
 
+/** Files that travel with a workflow's .md (stored in Storage). */
+export function workflowAttachments(files: SkillFile[]): SkillFile[] {
+  return files.slice(1).filter((f) => !!f.path);
+}
+
 /** A reference architecture has no parent; an adaptation is any fork. */
 export function isAdaptation(p: Pick<Prompt, "parentId">): boolean {
   return !!p.parentId;
@@ -60,7 +65,7 @@ export function unpackDoc(packed: string): string {
 
 /** A workflow's files with the .md packed for the trip to the editor. */
 export function packDocFiles(files: SkillFile[]): SkillFile[] {
-  return files.slice(0, 1).map((f) => ({ ...f, content: packDoc(f.content) }));
+  return files.map((f, i) => (i === 0 ? { ...f, content: packDoc(f.content) } : { ...f }));
 }
 
 /** Lines outside fenced code blocks, with their 1-based numbers. */
@@ -112,9 +117,9 @@ export function docFacts(md: string): { title?: string; description?: string } {
   return { title: title && title.length <= 200 ? title : title?.slice(0, 200), description };
 }
 
-/** Integrations named in a doc, from the suggested list, in list order. */
-export function suggestIntegrations(md: string): string[] {
-  return SUGGESTED_INTEGRATIONS.filter((name) =>
+/** Integrations named in a doc, from the catalog (or the starter list), in list order. */
+export function suggestIntegrations(md: string, names: readonly string[] = SUGGESTED_INTEGRATIONS): string[] {
+  return names.filter((name) =>
     new RegExp(`(^|[^a-z0-9])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^a-z0-9])`, "i").test(md),
   );
 }

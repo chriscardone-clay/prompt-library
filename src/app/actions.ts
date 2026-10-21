@@ -7,6 +7,7 @@ import { ALLOWED_EMAIL_DOMAIN, SKILL_BUCKET } from "@/lib/constants";
 import { getCatalog, workflowsEnabled } from "@/lib/data";
 import { type ActionResult, normaliseDraft } from "@/lib/draft";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { esc } from "@/lib/digest/blocks";
 import { getSiteUrl } from "@/lib/site";
 import { openSlackDm, postSlackMessage, slackConfigured } from "@/lib/slack";
@@ -250,6 +251,9 @@ export async function deletePrompt(id: string): Promise<ActionResult> {
   const { supabase } = await requireUser();
   // Collect stored binaries first (the row must still exist for the read policy).
   const paths = UUID_RE.test(id) ? await listStorageFolder(supabase, id) : [];
+  // Publish links go with the item (on delete cascade); their copied attachments are cleaned up below.
+  const { data: shareRows } = await supabase.from("workflow_shares").select("id").eq("prompt_id", id);
+  const shareIds = ((shareRows ?? []) as { id: string }[]).map((r) => r.id);
   // delete_prompt re-parents forks to the deleted item's parent, then deletes.
   const { error } = await supabase.rpc("delete_prompt", { p_id: id });
   if (error) return { ok: false, error: error.message };
@@ -257,8 +261,23 @@ export async function deletePrompt(id: string): Promise<ActionResult> {
     // Best effort: an orphaned object is harmless, a failed delete shouldn't be.
     await supabase.storage.from(SKILL_BUCKET).remove(paths).catch(() => undefined);
   }
+  if (shareIds.length) after(() => removeShareFolders(shareIds));
   revalidatePrompt(id);
   return { ok: true, data: undefined };
+}
+
+/** Best effort: copied attachments of a deleted item's publish links (service role; they're outside its folder). */
+async function removeShareFolders(shareIds: string[]) {
+  try {
+    const service = createServiceClient();
+    for (const sid of shareIds) {
+      const { data } = await service.storage.from(SKILL_BUCKET).list(`shares/${sid}`, { limit: 100 });
+      const paths = (data ?? []).map((o) => `shares/${sid}/${o.name}`);
+      if (paths.length) await service.storage.from(SKILL_BUCKET).remove(paths);
+    }
+  } catch {
+    /* orphaned copies are unreachable once the share row is gone */
+  }
 }
 
 /** Every object path under a storage folder, recursively. */

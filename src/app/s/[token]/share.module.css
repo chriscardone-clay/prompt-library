@@ -1,0 +1,144 @@
+/* The public share page: a pared-back Clay page with none of the library around it. */
+.root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+/* The site footer (author credit) isn't part of a customer page. */
+.root ~ :global(footer) {
+  display: none;
+}
+.header {
+  border-bottom: 1px solid var(--warm-line);
+}
+.headerIn,
+.main {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+.headerIn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-top: 16px;
+  padding-bottom: 16px;
+  flex-wrap: wrap;
+}
+.logo {
+  height: 24px;
+  width: auto;
+  display: block;
+}
+.label {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  padding-left: 12px;
+  border-left: 1px solid var(--oat-300);
+}
+.date {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 44px 0 28px;
+}
+.lede {
+  font-size: 18px;
+  color: var(--fg-muted);
+  max-width: 64ch;
+}
+.files {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 40px;
+  align-items: start;
+}
+.doc {
+  min-width: 0;
+}
+.toc {
+  position: sticky;
+  top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-raised);
+  border-radius: var(--radius-xl);
+  padding: 18px;
+  font-size: 14px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+.toc :global(.section-title) {
+  margin-bottom: 8px;
+}
+.toc a {
+  padding: 5px 10px;
+  border-radius: 8px;
+  color: var(--fg-muted);
+}
+.toc a:hover {
+  background: var(--oat-100);
+  color: var(--fg);
+  text-decoration: none;
+}
+.toc a[data-depth="3"] {
+  padding-left: 24px;
+  font-size: 13px;
+}
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 56px 0 40px;
+  padding-top: 18px;
+  border-top: 1px solid var(--warm-line);
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.gone {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 16px;
+}
+@media (max-width: 960px) {
+  .columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .toc {
+    position: static;
+    order: -1;
+    max-height: none;
+  }
+}
+@media (max-width: 560px) {
+  .headerIn,
+  .main {
+    padding: 0 16px;
+  }
+  .headerIn {
+    padding-top: 14px;
+    padding-bottom: 14px;
+  }
+  .date {
+    margin-left: 0;
+    width: 100%;
+  }
+}

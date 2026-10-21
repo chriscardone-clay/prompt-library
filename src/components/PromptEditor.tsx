@@ -24,12 +24,23 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPrompt, updatePrompt } from "@/app/actions";
-import { activeApps, activeTeams, appTone, REQUIRED_TONE, surfacesOf, toneStyle, type Catalog } from "@/lib/catalog";
+import {
+  activeApps,
+  activeIntegrations,
+  activeTeams,
+  appTone,
+  catalogIntegration,
+  REQUIRED_TONE,
+  surfacesOf,
+  toneStyle,
+  type Catalog,
+} from "@/lib/catalog";
 import {
   ALLOWED_EMAIL_DOMAIN,
   MAX_INTEGRATIONS,
   MAX_SKILL_BYTES,
   MAX_SKILL_TEXT_BYTES,
+  MAX_WORKFLOW_ATTACHMENTS,
   MAX_WORKFLOW_DOC_BYTES,
   SKILL_TEMPLATE,
   STAGE_LABELS,
@@ -95,6 +106,8 @@ interface Props {
   people: Person[];
   cancelHref: string;
   catalog: Catalog;
+  /** Workflows: live publish links, which unticking customer-ready revokes. */
+  activeShares?: number;
 }
 
 const VIS_OPTIONS: { k: Visibility; label: string; sub: string; Icon: typeof LockSimple }[] = [
@@ -112,11 +125,12 @@ export function PromptEditor({
   people,
   cancelHref,
   catalog,
+  activeShares = 0,
 }: Props) {
   // A workflow's .md arrives packed (see packDoc) so its bytes survive the trip.
   const [d, setD] = useState<PromptDraft>(() =>
     initial.kind === "workflow" && initial.files[0]
-      ? { ...initial, files: [{ ...initial.files[0], content: unpackDoc(initial.files[0].content) }] }
+      ? { ...initial, files: [{ ...initial.files[0], content: unpackDoc(initial.files[0].content) }, ...initial.files.slice(1)] }
       : initial,
   );
   const [fileIdx, setFileIdx] = useState(0);
@@ -159,9 +173,15 @@ export function PromptEditor({
   const [suggest, setSuggest] = useState<{ trigger: WorkflowTrigger | ""; integrations: string[] } | null>(null);
   const suggestLeft = !!suggest && (!!suggest.trigger || suggest.integrations.length > 0);
   const [intInput, setIntInput] = useState("");
+  // The Workflows team's list; the starter list until the catalog has entries.
+  const integrationNames = useMemo(() => {
+    const listed = activeIntegrations(catalog).map((i) => i.name);
+    return listed.length ? listed : [...SUGGESTED_INTEGRATIONS];
+  }, [catalog]);
   const addIntegration = (raw: string) => {
-    const name = raw.trim().replace(/\s+/g, " ").slice(0, 40);
-    if (!name) return;
+    const typed = raw.trim().replace(/\s+/g, " ").slice(0, 40);
+    if (!typed) return;
+    const name = catalogIntegration(catalog, typed)?.name ?? typed;
     setD((prev) => {
       const cur = prev.workflow ?? EMPTY_WORKFLOW;
       if (cur.integrations.some((x) => x.toLowerCase() === name.toLowerCase()) || cur.integrations.length >= MAX_INTEGRATIONS) return prev;
@@ -171,8 +191,45 @@ export function PromptEditor({
   const removeIntegration = (name: string) => setWf({ integrations: wf.integrations.filter((x) => x !== name) });
   const setDoc = (patch: Partial<SkillFile>) => {
     if (!doc) return;
-    upd({ files: [{ ...doc, ...patch }] });
+    upd({ files: [{ ...doc, ...patch }, ...d.files.slice(1)] });
   };
+  const attachments = isWf ? d.files.slice(1) : [];
+  const attBytes = attachments.reduce((n, f) => n + (f.size ?? 0), 0);
+  const [attBusy, setAttBusy] = useState<string | null>(null);
+  /** Attachments go straight to Storage under this workflow's folder, like binary skill files. */
+  const addAttachments = async (list: File[]) => {
+    if (!list.length || attBusy) return;
+    let next = [...attachments];
+    for (const f of list) {
+      const name = f.name.split(/[/\\]/).pop()?.trim() || "file";
+      if (doc && name.toLowerCase() === doc.name.toLowerCase()) {
+        show(`${name} has the same name as the .md. Rename it first.`);
+        continue;
+      }
+      const others = next.filter((a) => a.name.toLowerCase() !== name.toLowerCase());
+      if (others.length >= MAX_WORKFLOW_ATTACHMENTS) {
+        show(`Up to ${MAX_WORKFLOW_ATTACHMENTS} attachments.`);
+        break;
+      }
+      if (others.reduce((n, a) => n + (a.size ?? 0), 0) + f.size > MAX_SKILL_BYTES) {
+        show(`Attachments can total ${formatBytes(MAX_SKILL_BYTES)}. ${name} doesn't fit.`);
+        continue;
+      }
+      setAttBusy(`Uploading ${name}…`);
+      try {
+        const path = await uploadSkillBinary(draftId, name, f, f.type || undefined);
+        const entry: SkillFile = { name, content: "", path, size: f.size };
+        if (f.type) entry.type = f.type;
+        next = [...others, entry];
+        setD((cur) => ({ ...cur, files: [cur.files[0], ...next].filter(Boolean) }));
+      } catch (err) {
+        show(err instanceof Error && err.message ? `Couldn't upload ${name}: ${err.message}` : `Couldn't upload ${name}`);
+      }
+    }
+    setAttBusy(null);
+  };
+  const removeAttachment = (name: string) =>
+    setD((cur) => ({ ...cur, files: cur.files.filter((f, i) => i === 0 || f.name !== name) }));
   const keys = useMemo(() => parsePlaceholders(d.body), [d.body]);
   const isOwner = owner.id === me.id;
   const hasUrl = d.links.some((l) => l.url.trim());
@@ -185,7 +242,7 @@ export function PromptEditor({
     (isSkill
       ? d.files.length > 0 || hasUrl
       : isWf
-        ? !!docContent.trim() && !docTooBig && !needsAdaptedFor
+        ? !!docContent.trim() && !docTooBig && !needsAdaptedFor && !attBusy
         : d.body.trim().length > 0) &&
     d.apps.length > 0 &&
     d.audiences.length > 0 &&
@@ -206,7 +263,9 @@ export function PromptEditor({
           : isSkill
             ? "Add a title and at least one file or link."
             : isWf
-              ? docTooBig
+              ? attBusy
+                ? `${attBusy} Publish is available once it finishes.`
+                : docTooBig
                 ? `The .md is ${formatBytes(docBytes)}; the limit is ${formatBytes(MAX_WORKFLOW_DOC_BYTES)}.`
                 : needsAdaptedFor
                   ? "Say what this adaptation is for."
@@ -299,12 +358,12 @@ export function PromptEditor({
     const facts = docFacts(content);
     setD((cur) => ({
       ...cur,
-      files: [{ name: f.name, content }],
+      files: [{ name: f.name, content }, ...cur.files.slice(1)],
       title: cur.title.trim() ? cur.title : (facts.title ?? cur.title),
       description: cur.description.trim() ? cur.description : (facts.description ?? cur.description),
     }));
     const trigger = wf.trigger ? "" : suggestTrigger(content);
-    const integrations = suggestIntegrations(content).filter((i) => !wf.integrations.some((x) => x.toLowerCase() === i.toLowerCase()));
+    const integrations = suggestIntegrations(content, integrationNames).filter((i) => !wf.integrations.some((x) => x.toLowerCase() === i.toLowerCase()));
     setSuggest(trigger || integrations.length ? { trigger, integrations } : null);
     show(`Added ${f.name}`);
   };
@@ -778,6 +837,51 @@ export function PromptEditor({
     </div>
   );
 
+  const attachmentsBlock = doc ? (
+    <div className="field">
+      <div className={styles.bodyHead}>
+        <div className={styles.labelRow}>
+          <span className="eyebrow">Attachments</span>
+          <span className={styles.example}>Diagrams, sample payloads, exports. Optional.</span>
+        </div>
+        <span className="tiny muted">
+          {attachments.length
+            ? `${attachments.length} of ${MAX_WORKFLOW_ATTACHMENTS} · ${formatBytes(attBytes)} of ${formatBytes(MAX_SKILL_BYTES)}`
+            : `Up to ${MAX_WORKFLOW_ATTACHMENTS} files`}
+        </span>
+      </div>
+      {attachments.length ? (
+        <div className={styles.findings}>
+          {attachments.map((a) => (
+            <div key={a.name} className={styles.finding} style={{ alignItems: "center" }}>
+              <Cube size={15} className="muted" />
+              <span className="small grow truncate">{a.name}</span>
+              <span className="tiny muted">{formatBytes(a.size ?? 0)}</span>
+              <button type="button" className="icon-btn" aria-label={`Remove ${a.name}`} onClick={() => removeAttachment(a.name)}>
+                <X size={15} />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <label className={skillStyles.uploadLabel} style={{ alignSelf: "flex-start" }} aria-disabled={!!attBusy} data-busy={attBusy ? "" : undefined}>
+        {attBusy ? <span className={skillStyles.btnSpinner} aria-hidden="true" /> : <Plus weight="bold" size={13} />}
+        {attBusy ?? "Add attachments"}
+        <input
+          type="file"
+          multiple
+          disabled={!!attBusy}
+          onChange={(e) => {
+            const list = Array.from(e.target.files ?? []);
+            e.target.value = "";
+            void addAttachments(list);
+          }}
+          style={{ display: "none" }}
+        />
+      </label>
+    </div>
+  ) : null;
+
   const suggestBlock =
     isWf && suggest && suggestLeft ? (
       <div className={styles.suggest}>
@@ -1008,6 +1112,7 @@ export function PromptEditor({
           {showFiles ? filesBlock : null}
           {isWf ? docBlock : null}
           {suggestBlock}
+          {isWf ? attachmentsBlock : null}
           {isSkill && showLinks ? linksBlock : null}
           {isSkill && showAddOther ? (
             <button type="button" className={styles.addOther} onClick={addOther}>
@@ -1213,8 +1318,14 @@ export function PromptEditor({
                         ))}
                       </div>
                     ) : null}
+                    {wf.integrations.some((i) => !catalogIntegration(catalog, i)) && catalog.integrations?.length ? (
+                      <span className="tiny muted">
+                        Not in the list yet: {wf.integrations.filter((i) => !catalogIntegration(catalog, i)).join(", ")}. The Workflows team
+                        can add it to the list.
+                      </span>
+                    ) : null}
                     <div className="row gap-2 wrap">
-                      {SUGGESTED_INTEGRATIONS.filter((n) => !wf.integrations.some((x) => x.toLowerCase() === n.toLowerCase())).map((n) => (
+                      {integrationNames.filter((n) => !wf.integrations.some((x) => x.toLowerCase() === n.toLowerCase())).map((n) => (
                         <button key={n} type="button" className={styles.routeChip} onClick={() => addIntegration(n)}>
                           <Plus weight="bold" size={11} />
                           {n}
@@ -1309,6 +1420,13 @@ export function PromptEditor({
                       {wf.customerReady ? <CheckSquare weight="fill" size={18} /> : <Square size={18} className="muted" />}
                       <span className="grow">I&apos;ve checked this is safe to send to customers.</span>
                     </button>
+                    {activeShares > 0 ? (
+                      <span className={`tiny ${!wf.customerReady && initial.workflow?.customerReady ? styles.error : "muted"}`}>
+                        {!wf.customerReady && initial.workflow?.customerReady
+                          ? `Saving will revoke ${activeShares} published link${activeShares === 1 ? "" : "s"}.`
+                          : `${activeShares} published link${activeShares === 1 ? "" : "s"}. Unticking this revokes ${activeShares === 1 ? "it" : "them"}.`}
+                      </span>
+                    ) : null}
                   </div>,
                 )}
               </>

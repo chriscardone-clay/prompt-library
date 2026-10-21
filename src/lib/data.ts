@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { avatarIsStale, syncSlackAvatar } from "./avatars";
-import { type Catalog, type CatalogApp, type CatalogTeam } from "./catalog";
+import { type Catalog, type CatalogApp, type CatalogIntegration, type CatalogTeam } from "./catalog";
 import { isStage, isTrigger, isVisibility } from "./constants";
 import { workflowsAllowedByEnv } from "./features";
 import { personFromEmail, personFromProfile, UNKNOWN_PERSON } from "./people";
@@ -138,15 +138,23 @@ export const workflowsEnabled = cache(async (): Promise<boolean> => {
   return isAdmin();
 });
 
+/** Admins and Workflow maintainers (catalog_managers) may edit the Integrations catalog. */
+export const canManageIntegrations = cache(async (): Promise<boolean> => {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("can_manage_integrations");
+  return !error && data === true;
+});
+
 // ── Catalog (apps, surfaces, teams) ─────────────────────────────────
 export const getCatalog = cache(async (): Promise<Catalog> => loadCatalog(await createClient()));
 
 /** The catalog read through any client (the MCP connector uses the service client). */
 export async function loadCatalog(supabase: SupabaseClient): Promise<Catalog> {
-  const [appsRes, surfRes, teamsRes] = await Promise.all([
+  const [appsRes, surfRes, teamsRes, intRes] = await Promise.all([
     supabase.from("apps").select("name, bg, fg, install, archived, position, model_hint").order("position").order("name"),
     supabase.from("surfaces").select("app, name, install, position").order("position").order("name"),
     supabase.from("teams").select("name, archived, position").order("position").order("name"),
+    supabase.from("integrations").select("name, color, archived, position").order("position").order("name"),
   ]);
   if (appsRes.error) throw new Error(`getCatalog apps: ${appsRes.error.message}`);
   if (surfRes.error) throw new Error(`getCatalog surfaces: ${surfRes.error.message}`);
@@ -172,7 +180,9 @@ export async function loadCatalog(supabase: SupabaseClient): Promise<Catalog> {
     archived: t.archived,
     position: t.position,
   }));
-  return { apps, teams };
+  // Integrations are workflow-only: a failed read leaves the list empty rather than breaking every page.
+  const integrations = intRes.error ? [] : ((intRes.data ?? []) as CatalogIntegration[]);
+  return { apps, teams, integrations };
 }
 
 /** How many items use each app / surface / team. Admin page only. */

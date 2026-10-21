@@ -89,11 +89,11 @@ Any workflow marked customer-ready can be **published** to a public, read-only U
 **Managing links.** The detail page's side column lists every active link with its label, created by, created at, expires, views and last viewed. Each has Copy, Update to latest and **Revoke**. There can be more than one link per item, so each customer can get its own link and have it revoked separately.
 
 **Security.**
-- **Token.** 32 random bytes, base64url. Only its SHA-256 is stored (same pattern as `mcp_grants`). Tokens are never logged.
+- **Token.** 32 random bytes, base64url (43 characters). *As built:* the token is stored as is, readable only by the item's owner and editors through RLS, so they can copy the link again later. Hashing it would add no protection, because anyone who can read the row can already read the snapshot stored next to it. Tokens are never logged.
 - **Routing.** `/s/*` is added to `PUBLIC_PATHS` in `src/lib/supabase/session.ts`. The route handler looks the token up with the service role and reads **only** the `workflow_shares` row, never `prompts`, so a bug in it can't expose library data. A revoked, expired or unknown token returns the same 404.
 - **Headers.** `X-Robots-Tag: noindex, nofollow`, `Referrer-Policy: no-referrer`, `frame-ancestors 'none'` and a strict CSP (no inline scripts, no third-party requests). The page is rendered on the server and needs no client JS beyond the Source toggle and copy button.
 - **Markdown.** Rendered without raw HTML (same `<MarkdownDoc>` as the app). Links in the doc get `rel="noopener noreferrer nofollow"`. Images only load from the share's own attachments, not from external URLs.
-- **Rate limit.** Per IP on `/s/*` (e.g. 60/min) to make token guessing pointless and limit scraping.
+- **Rate limit.** *Not built.* A 256-bit token can't be guessed, so a limit would only slow down scraping of a link someone already has. Add one at the edge (Vercel firewall) if that becomes a concern.
 - **Lifecycle.** Deleting the item revokes all its links. Making the item private doesn't revoke links, because publishing is an explicit owner choice, but the panel says so. Unticking customer-ready asks "Revoke N active links?".
 - **Audit.** Each view increments `view_count` and sets `last_viewed_at`. No IP or user-agent is stored.
 
@@ -229,11 +229,24 @@ One paragraph: what the flow does, for whom, and what it writes.
 - Adaptations must say what they're "Adapted for". They start as Draft and not customer-ready.
 - Workflows are kept out of the Slack assistant, the MCP connector and the weekly digest.
 
-**Phase 2 (not built yet)**
-- Publish links (`/s/<token>`) and their security review.
-- The admin-managed Integrations catalog and the Workflow maintainers role. Phase 1 takes free-text integrations with suggestions.
-- Attachments.
-- Workflows in the Slack assistant, the connector (`get_workflow`) and the digest.
+**Phase 2 (built, migration 0023)**
+- **Publish links** (`/s/<token>`, `/s/<token>/download`, `/s/<token>/files/<name>`):
+  - pinned snapshots, with label, expiry, chosen attachments, Update and Revoke;
+  - unticking customer-ready revokes every live link (a database trigger);
+  - headers: noindex, no-referrer, no framing, and a sandbox CSP on attachments.
+- **Integrations catalog** at `/admin/integrations`:
+  - run by Workflow maintainers (`catalog_managers`); admins choose who they are;
+  - add, rename (cascades to workflows), recolour, reorder, archive, and delete when unused;
+  - the editor offers the list, and anything typed in shows under "In use but not on the list" for maintainers to add.
+- **Attachments**:
+  - up to 10 files, 5 MB in total, stored in the `skill-files` bucket;
+  - always downloaded as attachments with nosniff and a sandbox CSP;
+  - copied to adaptations and into publish links.
+
+**Still to do**
+- A security review of `/s/*` before the flag comes off.
+- Workflows in the Slack assistant, the connector (`get_workflow`, `publish_workflow`) and the digest.
+- A "Download bundle (.zip)" button.
 - Search synonyms in SQL.
 - Snapshotting trigger, stage and integrations in version history.
 

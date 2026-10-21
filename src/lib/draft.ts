@@ -3,7 +3,7 @@
  * Actions (src/app/actions.ts) and the MCP connector's create tool, so both
  * enforce the same limits and catalog rules. Pure: no I/O.
  */
-import { type Catalog, isKnownApp, isKnownTeam, surfacesOf } from "@/lib/catalog";
+import { type Catalog, catalogIntegration, isKnownApp, isKnownTeam, surfacesOf } from "@/lib/catalog";
 import {
   ALLOWED_EMAIL_DOMAIN,
   isStage,
@@ -13,6 +13,7 @@ import {
   MAX_SKILL_BYTES,
   MAX_SKILL_FILES,
   MAX_SKILL_TEXT_BYTES,
+  MAX_WORKFLOW_ATTACHMENTS,
   MAX_WORKFLOW_DOC_BYTES,
 } from "@/lib/constants";
 import { fileBytes, formatBytes, linkHost, skillMd } from "@/lib/skills";
@@ -109,6 +110,35 @@ export function normaliseDraft(input: PromptDraft, allowedFolders: string[], cat
       return { ok: false, error: `The .md is ${formatBytes(bytes)}; the limit is ${formatBytes(MAX_WORKFLOW_DOC_BYTES)}.` };
     }
     files = [{ name, content }];
+
+    // Attachments: files already uploaded to this workflow's storage folder.
+    const seen = new Set([name.toLowerCase()]);
+    let total = 0;
+    for (const f of (input.files ?? []).slice(1)) {
+      const attName = String(f?.name ?? "")
+        .trim()
+        .replace(/^.*[/\\]/, "");
+      const path = typeof f?.path === "string" ? f.path.trim() : "";
+      if (!attName && !path) continue;
+      if (!attName || !path) return { ok: false, error: "An attachment didn't finish uploading. Remove it and add it again." };
+      if (attName.length > MAX_FILE_NAME) return { ok: false, error: "An attachment's name is too long." };
+      if (seen.has(attName.toLowerCase())) return { ok: false, error: `Two files are both named ${attName}.` };
+      seen.add(attName.toLowerCase());
+      const folder = path.split("/")[0];
+      if (!allowedFolders.includes(folder) || path.split("/").some((seg) => seg === "..")) {
+        return { ok: false, error: `Attachment "${attName}" doesn't belong to this workflow.` };
+      }
+      const size = typeof f.size === "number" && Number.isFinite(f.size) && f.size >= 0 ? Math.floor(f.size) : 0;
+      total += size;
+      const entry: SkillFile = { name: attName, content: "", path, size };
+      const type = typeof f.type === "string" ? f.type.slice(0, 100) : "";
+      if (type) entry.type = type;
+      files.push(entry);
+    }
+    if (files.length - 1 > MAX_WORKFLOW_ATTACHMENTS) return { ok: false, error: `Up to ${MAX_WORKFLOW_ATTACHMENTS} attachments.` };
+    if (total > MAX_SKILL_BYTES) {
+      return { ok: false, error: `Attachments total ${formatBytes(total)}; the limit is ${formatBytes(MAX_SKILL_BYTES)}.` };
+    }
   } else {
     files = [];
   }
@@ -176,7 +206,9 @@ export function normaliseDraft(input: PromptDraft, allowedFolders: string[], cat
     const w = input.workflow;
     const integrations: string[] = [];
     for (const raw of w?.integrations ?? []) {
-      const name = String(raw ?? "").trim().replace(/\s+/g, " ").slice(0, 40);
+      const typed = String(raw ?? "").trim().replace(/\s+/g, " ").slice(0, 40);
+      // Use the catalog's spelling when the name is listed; unlisted names are kept for maintainers to review.
+      const name = (typed && catalogIntegration(catalog, typed)?.name) || typed;
       if (name && !integrations.some((x) => x.toLowerCase() === name.toLowerCase())) integrations.push(name);
     }
     if (integrations.length > MAX_INTEGRATIONS) return { ok: false, error: `Up to ${MAX_INTEGRATIONS} integrations.` };

@@ -1,4 +1,4 @@
-import { ArrowLeft, CheckCircle, GitFork, PencilSimple, Warning } from "@phosphor-icons/react/dist/ssr";
+import { ArrowLeft, CheckCircle, DownloadSimple, GitFork, LinkSimple, PencilSimple, Warning } from "@phosphor-icons/react/dist/ssr";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -7,6 +7,7 @@ import { Avatar } from "@/components/Avatar";
 import { DeleteButton } from "@/components/DeleteButton";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { FeedbackSection } from "@/components/FeedbackSection";
+import { SharePanel } from "@/components/SharePanel";
 import { MarkdownDoc } from "@/components/MarkdownDoc";
 import { WorkflowDoc } from "@/components/WorkflowDoc";
 import { Header } from "@/components/Header";
@@ -18,6 +19,7 @@ import { SkillLinks } from "@/components/SkillLinks";
 import {
   AppTag,
   AudienceTag,
+  IntegrationTag,
   OriginTag,
   PrivateTag,
   ReadyTag,
@@ -27,11 +29,13 @@ import {
   WorkflowTag,
   appLabel,
 } from "@/components/Tag";
-import { appTone, REQUIRED_TONE, toneStyle } from "@/lib/catalog";
+import { appTone, catalogIntegration, REQUIRED_TONE, toneStyle } from "@/lib/catalog";
 import { STAGE_LABELS, TRIGGER_LABELS } from "@/lib/constants";
 import { tableOfContents } from "@/lib/markdown";
-import { fileBytes, skillSlug } from "@/lib/skills";
-import { scanForInternal, workflowDoc } from "@/lib/workflows";
+import { listShares } from "@/lib/shares";
+import { getRequestOrigin } from "@/lib/site";
+import { fileBytes, formatBytes, skillSlug } from "@/lib/skills";
+import { scanForInternal, workflowAttachments, workflowDoc } from "@/lib/workflows";
 import { shouldNudgeToSlack } from "@/lib/slackNudge";
 import { ToastFromQuery } from "@/components/Toast";
 import { VariantsTree } from "@/components/VariantsTree";
@@ -81,6 +85,7 @@ export default async function PromptPage({ params }: { params: Params }) {
   const toc = doc ? tableOfContents(doc.content) : [];
   // The customer-ready check is for the people who can fix the doc.
   const findings = doc && editable ? scanForInternal(doc.content) : [];
+  const [shares, origin] = isWf && editable ? await Promise.all([listShares(prompt.id), getRequestOrigin()]) : [[], ""];
 
   const nudge = await shouldNudgeToSlack(user);
   return (
@@ -163,6 +168,12 @@ export default async function PromptPage({ params }: { params: Params }) {
               <GitFork weight="bold" size={15} />
               {isWf ? "Adapt" : "Fork"}
             </Link>
+            {isWf && editable ? (
+              <a href="#links" className="btn btn-outline">
+                <LinkSimple weight="bold" size={15} />
+                Publish link
+              </a>
+            ) : null}
             {editable ? (
               <Link href={`/prompts/${prompt.id}/edit`} className="btn btn-outline">
                 <PencilSimple weight="bold" size={15} />
@@ -188,6 +199,20 @@ export default async function PromptPage({ params }: { params: Params }) {
                   >
                     <MarkdownDoc md={doc.content} />
                   </WorkflowDoc>
+                ) : null}
+                {workflowAttachments(prompt.files).length ? (
+                  <div className="slab" style={{ gap: 10 }}>
+                    <div className="section-title">Attachments</div>
+                    <div className={styles.findings}>
+                      {workflowAttachments(prompt.files).map((f) => (
+                        <a key={f.name} href={`/prompts/${prompt.id}/files/${encodeURIComponent(f.name)}`} className={styles.finding} download={f.name}>
+                          <DownloadSimple weight="bold" size={14} />
+                          <span className="grow truncate">{f.name}</span>
+                          <span className="tiny muted">{formatBytes(f.size ?? 0)}</span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
                 ) : null}
                 <SkillLinks links={prompt.links} kind="workflow" />
               </>
@@ -233,13 +258,21 @@ export default async function PromptPage({ params }: { params: Params }) {
                 {prompt.workflow.integrations.length ? (
                   <div className={styles.tags}>
                     {prompt.workflow.integrations.map((i) => (
-                      <span key={i} className="tag tag-light">
-                        {i}
-                      </span>
+                      <IntegrationTag key={i} name={i} color={catalogIntegration(catalog, i)?.color} />
                     ))}
                   </div>
                 ) : null}
               </div>
+            ) : null}
+            {isWf && editable && doc ? (
+              <SharePanel
+                promptId={prompt.id}
+                customerReady={prompt.workflow.customerReady}
+                attachments={workflowAttachments(prompt.files).map((f) => f.name)}
+                shares={shares}
+                updatedAt={prompt.updatedAt}
+                origin={origin}
+              />
             ) : null}
             {isWf && editable && doc ? (
               <div className="slab" style={{ gap: 10 }}>

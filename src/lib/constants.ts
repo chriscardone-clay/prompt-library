@@ -48,6 +48,8 @@ export const SUGGESTED_INTEGRATIONS = [
 export const MAX_INTEGRATIONS = 20;
 /** The architecture .md is sent inline with the save, like skill text files. */
 export const MAX_WORKFLOW_DOC_BYTES = 512 * 1024;
+/** Attachments (diagrams, sample payloads, exports) go to Storage, like binary skill files. */
+export const MAX_WORKFLOW_ATTACHMENTS = 10;
 /** The app the workflow editor ticks by default (seeded by migration 0022). */
 export const WORKFLOW_APP = "Clay Workflows";
 

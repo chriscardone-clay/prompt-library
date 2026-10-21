@@ -30,9 +30,19 @@ export interface CatalogTeam {
   position: number;
 }
 
+/** An integration a workflow can name (managed by the Workflows team). */
+export interface CatalogIntegration {
+  name: string;
+  color: string;
+  archived: boolean;
+  position: number;
+}
+
 export interface Catalog {
   apps: CatalogApp[];
   teams: CatalogTeam[];
+  /** Workflow integrations; absent where the catalog was built without them. */
+  integrations?: CatalogIntegration[];
 }
 
 export const EMPTY_CATALOG: Catalog = { apps: [], teams: [] };
@@ -83,6 +93,16 @@ export function activeApps(catalog: Catalog): CatalogApp[] {
 
 export function activeTeams(catalog: Catalog): CatalogTeam[] {
   return catalog.teams.filter((t) => !t.archived);
+}
+
+export function activeIntegrations(catalog: Catalog): CatalogIntegration[] {
+  return (catalog.integrations ?? []).filter((i) => !i.archived);
+}
+
+/** The catalog's spelling of an integration name, matched case-insensitively. */
+export function catalogIntegration(catalog: Catalog, name: string): CatalogIntegration | undefined {
+  const key = name.trim().toLowerCase();
+  return (catalog.integrations ?? []).find((i) => i.name.toLowerCase() === key);
 }
 
 export function isKnownApp(catalog: Catalog, name: string): boolean {

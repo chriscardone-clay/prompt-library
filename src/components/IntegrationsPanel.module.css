@@ -1,0 +1,68 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 880px;
+  padding-top: 12px;
+}
+.add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.add :global(.input) {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--warm-line);
+  min-height: 52px;
+}
+.row:last-child {
+  border-bottom: 0;
+}
+.row[data-archived] .name {
+  color: var(--fg-muted);
+}
+.swatch {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+  flex: none;
+}
+.name {
+  font-weight: 500;
+  flex: 1 1 160px;
+  min-width: 0;
+}
+.used {
+  white-space: nowrap;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+.renameForm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 320px;
+  flex-wrap: wrap;
+}
+.renameForm :global(.input) {
+  flex: 1 1 160px;
+  min-width: 0;
+}

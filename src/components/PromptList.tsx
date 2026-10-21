@@ -9,6 +9,7 @@ import {
   activeTeams,
   toneStyle,
   appTone,
+  catalogIntegration,
   isKnownApp,
   REQUIRED_TONE,
   isKnownTeam,
@@ -21,7 +22,7 @@ import { searchPrompts } from "@/lib/search";
 import type { Profile, Prompt } from "@/lib/types";
 import { Avatar } from "./Avatar";
 import { FavoriteButton } from "./FavoriteButton";
-import { AppTag, OriginTag, ReadyTag, SkillTag, TriggerTag, WorkflowTag } from "./Tag";
+import { AppTag, IntegrationTag, OriginTag, ReadyTag, SkillTag, TriggerTag, WorkflowTag } from "./Tag";
 import { VoteButton } from "./VoteButton";
 import styles from "./PromptList.module.css";
 
@@ -34,6 +35,8 @@ interface Props {
   catalog: Catalog;
   /** Workflows are in beta: only people in WORKFLOWS_BETA (and admins) see the tab. */
   workflowsOn?: boolean;
+  /** Admins and Workflow maintainers get a link to the Integrations catalog. */
+  manageIntegrations?: boolean;
 }
 
 type Origin = "all" | "reference" | "adapted";
@@ -61,7 +64,7 @@ function serialiseSurfaces(s: Record<string, string[]>): string | null {
 }
 const listParam = (v: string[]) => (v.length ? v.join(",") : null);
 
-export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn = false }: Props) {
+export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn = false, manageIntegrations = false }: Props) {
   const params = useSearchParams();
   const pathname = usePathname();
 
@@ -283,9 +286,16 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
           <div className="muted small">{countLabel}</div>
         </div>
         {isWf ? (
-          <Link href="/workflows/new" className="btn btn-outline">
-            New workflow
-          </Link>
+          <div className="row gap-2 wrap">
+            {manageIntegrations ? (
+              <Link href="/admin/integrations" className="btn btn-outline">
+                Integrations
+              </Link>
+            ) : null}
+            <Link href="/workflows/new" className="btn btn-outline">
+              New workflow
+            </Link>
+          </div>
         ) : null}
       </div>
 
@@ -601,7 +611,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
 }
 
 function PromptCard({ prompt: p, forks, meId, catalog }: { prompt: Prompt; forks: number; meId: string; catalog: Catalog }) {
-  if (p.kind === "workflow") return <WorkflowCard prompt={p} forks={forks} meId={meId} />;
+  if (p.kind === "workflow") return <WorkflowCard prompt={p} forks={forks} meId={meId} catalog={catalog} />;
   const parts: string[] = [];
   if (p.kind === "skill") {
     if (p.files.length) parts.push(plural(p.files.length, "file"));
@@ -665,7 +675,7 @@ function PromptCard({ prompt: p, forks, meId, catalog }: { prompt: Prompt; forks
   );
 }
 
-function WorkflowCard({ prompt: p, forks, meId }: { prompt: Prompt; forks: number; meId: string }) {
+function WorkflowCard({ prompt: p, forks, meId, catalog }: { prompt: Prompt; forks: number; meId: string; catalog: Catalog }) {
   const w = p.workflow;
   const parts = [w.stage ? STAGE_LABELS[w.stage] : null, `updated ${ago(p.updatedAt)}`, forks ? plural(forks, "adaptation") : null];
   return (
@@ -694,9 +704,7 @@ function WorkflowCard({ prompt: p, forks, meId }: { prompt: Prompt; forks: numbe
         {w.integrations.length || w.customerReady ? (
           <div className={styles.cardTags}>
             {w.integrations.slice(0, 3).map((i) => (
-              <span key={i} className="tag tag-light">
-                {i}
-              </span>
+              <IntegrationTag key={i} name={i} color={catalogIntegration(catalog, i)?.color} />
             ))}
             {w.integrations.length > 3 ? (
               <span className="tag tag-light tag-muted" title={w.integrations.slice(3).join(", ")}>

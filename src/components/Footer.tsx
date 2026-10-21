@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AUTHOR_HANDLE, AUTHOR_SLACK_URL } from "@/lib/constants";
-import { getCurrentUser, isAdmin } from "@/lib/data";
+import { canManageIntegrations, getCurrentUser, isAdmin, workflowsEnabled } from "@/lib/data";
 import styles from "./Footer.module.css";
 
 /**
@@ -10,6 +10,8 @@ import styles from "./Footer.module.css";
 export async function Footer() {
   const user = await getCurrentUser();
   const admin = user ? await isAdmin() : false;
+  // Workflow maintainers aren't admins but run the Integrations catalog.
+  const maintainer = user && !admin ? (await workflowsEnabled()) && (await canManageIntegrations()) : false;
   return (
     <footer className={`${styles.footer} embed-hide`}>
       <span>
@@ -18,6 +20,16 @@ export async function Footer() {
           {AUTHOR_HANDLE}
         </a>
       </span>
+      {maintainer ? (
+        <>
+          <span className={styles.dot} aria-hidden="true">
+            ·
+          </span>
+          <Link href="/admin/integrations" className={styles.admin}>
+            Integrations
+          </Link>
+        </>
+      ) : null}
       {admin ? (
         <>
           <span className={styles.dot} aria-hidden="true">
