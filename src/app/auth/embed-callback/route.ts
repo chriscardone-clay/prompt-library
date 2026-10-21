@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { syncAvatarOnLogin } from "@/lib/avatars";
 import { ALLOWED_EMAIL_DOMAIN } from "@/lib/constants";
+import { EMBED_MARKER, embedMarkerOptions } from "@/lib/supabase/cookies";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest) {
   }
   if (!code) return NextResponse.json({ error: "Missing code." }, { status: 400 });
 
-  const supabase = await createClient({ pkceCookie: "partitioned" });
+  const supabase = await createClient({ embed: true });
   const { data, error } = await supabase.auth.exchangeCodeForSession(code);
   if (error || !data.user) {
     const msg = error?.message ?? "";
@@ -34,5 +35,8 @@ export async function POST(request: NextRequest) {
   }
 
   await syncAvatarOnLogin(supabase, data.user.id, email);
-  return NextResponse.json({ ok: true });
+  // Later requests from this frame read the partitioned session cookies (src/lib/supabase/cookies.ts).
+  const res = NextResponse.json({ ok: true });
+  res.cookies.set(EMBED_MARKER, "1", embedMarkerOptions);
+  return res;
 }
