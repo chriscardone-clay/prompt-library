@@ -1,0 +1,329 @@
+/* One line of facet chips with popovers (Discover). */
+.wrap {
+  position: relative;
+  min-width: 0;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  min-width: 0;
+  padding: 2px 4px 4px;
+}
+.measure {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  display: flex;
+  gap: 8px;
+  white-space: nowrap;
+  top: 0;
+  left: 0;
+}
+.anchor {
+  position: relative;
+  flex: none;
+}
+.tail {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  white-space: nowrap;
+}
+.sep {
+  width: 1px;
+  height: 20px;
+  background: var(--warm-line);
+}
+
+.chipWrap {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: var(--white);
+}
+.chipWrap[data-on] {
+  background: var(--fg);
+  border-color: var(--fg);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px 0 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.anchor > .chip {
+  border: 1px dashed var(--border-strong);
+  background: var(--white);
+}
+.chipWrap:not([data-on]):hover,
+.anchor > .chip:hover {
+  border-color: var(--fg);
+}
+.chip[data-open] {
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--fg) 14%, transparent);
+}
+.chip[data-on] {
+  color: var(--oat-100);
+  padding-right: 4px;
+}
+.value {
+  font-weight: 400;
+  opacity: 0.85;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chipX {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 6px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklab, var(--oat-100) 22%, transparent);
+  color: var(--oat-100);
+}
+.chipX:hover {
+  background: color-mix(in oklab, var(--oat-100) 36%, transparent);
+}
+.clearAll {
+  background: transparent;
+  border: 0;
+  padding: 4px 2px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg-muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.clearAll:hover:not(:disabled) {
+  color: var(--fg);
+}
+.clearAll:disabled {
+  opacity: 0.5;
+  text-decoration: none;
+}
+
+/* Popovers */
+.popover {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  background: var(--white);
+  border: 1px solid var(--grey-line);
+  border-radius: 16px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+}
+.search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  margin: 12px 12px 4px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: var(--bg-raised);
+  color: var(--fg-muted);
+}
+.search input,
+.search input:focus {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-size: 13.5px;
+  color: var(--fg);
+}
+.search:focus-within {
+  outline: 2px solid var(--tangerine-300);
+  outline-offset: 1px;
+}
+.options {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  font-size: 14px;
+  text-align: left;
+}
+.option:hover,
+.option[aria-selected="true"] {
+  background: var(--bg-raised);
+}
+.box {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1.5px solid var(--border-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.box[data-round] {
+  border-radius: 999px;
+}
+.option[aria-selected="true"] .box {
+  background: var(--fg);
+  border-color: var(--fg);
+  color: var(--oat-100);
+}
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+}
+.count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+.sub {
+  padding: 2px 8px 8px 36px;
+}
+.none {
+  padding: 12px 14px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--warm-line);
+}
+
+@media (min-width: 561px) {
+  .anchor[data-end] .popover {
+    left: auto;
+    right: 0;
+  }
+}
+
+/* All filters */
+.all {
+  width: 440px;
+}
+.allHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 18px 10px;
+  font-size: 16px;
+}
+.allList {
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+}
+.allRow {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 18px;
+  border: 0;
+  border-top: 1px solid var(--warm-line);
+  background: transparent;
+  color: var(--fg);
+  font-size: 14px;
+  text-align: left;
+}
+.allRow:hover {
+  background: var(--oat-100);
+}
+.allKey {
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.allVal {
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.allVal[data-on] {
+  color: var(--fg);
+  font-weight: 500;
+}
+.allOpen .search {
+  margin: 0 12px 4px;
+}
+.allOpen {
+  padding-bottom: 4px;
+}
+
+/* Phones: every popover is a bottom sheet over a scrim, with room to tap. */
+@media (max-width: 560px) {
+  .popover {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: auto;
+    bottom: 0;
+    width: auto;
+    max-width: none;
+    max-height: 80vh;
+    border-radius: 24px 24px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+    box-shadow: 0 0 0 100vmax rgba(27, 26, 24, 0.32), 0 -8px 24px rgba(0, 0, 0, 0.12);
+  }
+  .options,
+  .allList {
+    max-height: none;
+    flex: 1;
+    overflow-y: auto;
+  }
+  .option {
+    min-height: 44px;
+  }
+  .foot .btn-primary,
+  .foot :global(.btn) {
+    flex: 1;
+  }
+  .allRow {
+    grid-template-columns: 130px minmax(0, 1fr) 14px;
+    min-height: 52px;
+  }
+}

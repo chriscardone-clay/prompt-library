@@ -1,6 +1,6 @@
 "use client";
 
-import { CaretDown, Check, CheckSquare, Cpu, FunnelSimple, GitFork, LockSimple, MagnifyingGlass, Square, X } from "@phosphor-icons/react";
+import { CaretDown, Check, Cpu, GitFork, LockSimple, MagnifyingGlass, X } from "@phosphor-icons/react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -9,18 +9,20 @@ import {
   activeTeams,
   toneStyle,
   appTone,
+  catalogIntegration,
   isKnownApp,
   REQUIRED_TONE,
   isKnownTeam,
   surfacesOf,
   type Catalog,
 } from "@/lib/catalog";
-import { isSort, isTrigger, SORT_LABELS, SORTS, TRIGGER_LABELS, WORKFLOW_TRIGGERS, type Kind, type Sort } from "@/lib/constants";
+import { isSort, isStage, isTrigger, SORT_LABELS, SORTS, STAGE_LABELS, TRIGGER_LABELS, WORKFLOW_STAGES, WORKFLOW_TRIGGERS, type Kind, type Sort } from "@/lib/constants";
 import { approvalBoost, approvalRank, compareRecommended } from "@/lib/approval";
 import { ago, plural } from "@/lib/format";
 import { searchPrompts } from "@/lib/search";
 import type { Profile, Prompt } from "@/lib/types";
 import { Avatar } from "./Avatar";
+import { type Facet, FilterBar } from "./FilterBar";
 import { FavoriteButton } from "./FavoriteButton";
 import { ApprovalTag, AppTag, SkillTag, WorkflowTag } from "./Tag";
 import { VoteButton } from "./VoteButton";
@@ -131,6 +133,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
   const triggers = isWf ? (params.get("triggers") ?? "").split(",").filter(isTrigger) : [];
   const integrations = isWf ? (params.get("integrations") ?? "").split(",").filter(Boolean) : [];
   const readyOnly = isWf && params.get("ready") === "1";
+  const stages = isWf ? (params.get("stages") ?? "").split(",").filter(isStage) : [];
   const apps = (params.get("apps") ?? "").split(",").filter((a) => isKnownApp(catalog, a));
   const surfaces = parseSurfaces(params.get("surfaces"), catalog);
   const teams = (params.get("teams") ?? "").split(",").filter((t) => isKnownTeam(catalog, t));
@@ -138,7 +141,6 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
   const sort: Sort = isSort(sortParam) && (sorts as readonly string[]).includes(sortParam) ? sortParam : defaultSort;
   const approvedParam = enablementOn ? params.get("approved") : null;
   const approvedFilter: "approved" | "gold" | null = approvedParam === "gold" ? "gold" : approvedParam === "1" ? "approved" : null;
-  const filtersOpen = params.get("filters") === "1";
 
   const setApps = (next: string[], nextSurfaces = surfaces) =>
     writeUrl({ apps: listParam(next), surfaces: serialiseSurfaces(nextSurfaces) });
@@ -159,11 +161,13 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
     writeUrl({ triggers: listParam(triggers.includes(t as never) ? triggers.filter((x) => x !== t) : [...triggers, t]) });
   const toggleIntegration = (i: string) =>
     writeUrl({ integrations: listParam(integrations.includes(i) ? integrations.filter((x) => x !== i) : [...integrations, i]) });
+  const toggleStage = (st: string) =>
+    writeUrl({ stages: listParam(stages.includes(st as never) ? stages.filter((x) => x !== st) : [...stages, st]) });
   const clearFilters = () => {
     if (qTimer.current) clearTimeout(qTimer.current);
     setQ("");
     lastWrittenQ.current = "";
-    writeUrl({ apps: null, surfaces: null, teams: null, q: null, triggers: null, integrations: null, ready: null, approved: null });
+    writeUrl({ apps: null, surfaces: null, teams: null, q: null, triggers: null, integrations: null, stages: null, ready: null, approved: null, origin: null });
   };
 
   const activeCount =
@@ -172,6 +176,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
     teams.length +
     triggers.length +
     integrations.length +
+    stages.length +
     (readyOnly ? 1 : 0) +
     (approvedFilter ? 1 : 0);
 
@@ -217,6 +222,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
       const want = integrations.map((i) => i.toLowerCase());
       out = out.filter((p) => p.workflow.integrations.some((i) => want.includes(i.toLowerCase())));
     }
+    if (stages.length) out = out.filter((p) => stages.includes(p.workflow.stage || "draft"));
     if (readyOnly) out = out.filter((p) => p.workflow.customerReady);
     if (approvedFilter) out = out.filter((p) => approvalRank(p.approval) >= (approvedFilter === "gold" ? 2 : 1));
     // Ranked search over title, description, notes/apps/teams and the prompt text
@@ -243,12 +249,8 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
       return t(b.updatedAt) - t(a.updatedAt);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prompts, kind, q, params.get("apps"), params.get("surfaces"), params.get("teams"), params.get("triggers"), params.get("integrations"), readyOnly, approvedFilter, sort, catalog]);
+  }, [prompts, kind, q, params.get("apps"), params.get("surfaces"), params.get("teams"), params.get("triggers"), params.get("integrations"), params.get("stages"), readyOnly, approvedFilter, sort, catalog]);
 
-  // Reference architectures vs adaptations, counted before the toggle narrows the list.
-  const originCounts = isWf
-    ? { all: list.length, reference: list.filter((p) => !p.parentId).length, adapted: list.filter((p) => !!p.parentId).length }
-    : null;
   const shown = origin === "all" ? list : list.filter((p) => (origin === "adapted" ? !!p.parentId : !p.parentId));
 
   const title =
@@ -272,25 +274,112 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
   const newHref = kind === "skill" ? "/skills/new" : kind === "workflow" ? "/workflows/new" : "/prompts/new";
   const newLabel = kind === "skill" ? "New skill" : kind === "workflow" ? "New workflow" : "New prompt";
 
-  const activeChips: { key: string; label: string; bg: string; fg: string; remove: () => void }[] = [
-    ...apps.map((app) => {
-      const want = surfaces[app] ?? [];
+  // ── Facets for the filter bar (counts are within the current kind) ──
+  const base = kind === "all" ? prompts : prompts.filter((p) => p.kind === kind);
+  const countOf = (pred: (p: Prompt) => boolean) => base.filter(pred).length;
+  const toggleOne = (key: string, current: string | null, value: string) => writeUrl({ [key]: current === value ? null : value });
+  const appFacet: Facet = {
+    key: "app",
+    label: "App",
+    options: activeApps(catalog).map(({ name }) => {
+      const surfs = surfacesOf(catalog, name);
+      const want = surfaces[name] ?? [];
       return {
-        key: `a-${app}`,
-        label: want.length ? `${app} · ${want.join(", ")}` : app,
-        bg: appTone(catalog, app).bg,
-        fg: appTone(catalog, app).fg,
-        remove: () => toggleApp(app),
+        value: name,
+        label: name,
+        count: countOf((p) => p.apps.some((a) => a.app === name)),
+        swatch: appTone(catalog, name).fg,
+        children: surfs.length ? (
+          <div className={styles.subPills} role="group" aria-label={`${name} surfaces`}>
+            {surfs.map((sf) => (
+              <button key={sf} type="button" className={styles.subPill} aria-pressed={want.includes(sf)} onClick={() => toggleSurface(name, sf)}>
+                {sf}
+              </button>
+            ))}
+          </div>
+        ) : undefined,
       };
     }),
-    ...teams.map((t) => ({ key: `t-${t}`, label: t, bg: "var(--white)", fg: "var(--fg)", remove: () => toggleTeam(t) })),
-    ...triggers.map((t) => ({ key: `tr-${t}`, label: `Trigger: ${TRIGGER_LABELS[t]}`, bg: "var(--white)", fg: "var(--fg)", remove: () => toggleTrigger(t) })),
-    ...integrations.map((i) => ({ key: `i-${i}`, label: i, bg: "var(--white)", fg: "var(--fg)", remove: () => toggleIntegration(i) })),
-    ...(readyOnly ? [{ key: "ready", label: "Customer-ready", bg: "var(--white)", fg: "var(--fg)", remove: () => writeUrl({ ready: null }) }] : []),
-    ...(approvedFilter
-      ? [{ key: "approved", label: approvedFilter === "gold" ? "Gold standards" : "Enablement approved", bg: "var(--white)", fg: "var(--fg)", remove: () => writeUrl({ approved: null }) }]
-      : []),
-  ];
+    selected: apps,
+    toggle: toggleApp,
+    clear: () => writeUrl({ apps: null, surfaces: null }),
+  };
+  const teamFacet: Facet = {
+    key: "team",
+    label: "Team",
+    options: activeTeams(catalog).map(({ name }) => ({ value: name, label: name, count: countOf((p) => p.audiences.includes(name)) })),
+    selected: teams,
+    toggle: toggleTeam,
+    clear: () => writeUrl({ teams: null }),
+  };
+  const enablementFacet: Facet = {
+    key: "enablement",
+    label: "Enablement",
+    single: true,
+    options: [
+      { value: "1", label: "Enablement approved", count: countOf((p) => approvalRank(p.approval) >= 1) },
+      { value: "gold", label: "Gold standards only", count: countOf((p) => approvalRank(p.approval) === 2) },
+    ],
+    selected: approvedFilter === "gold" ? ["gold"] : approvedFilter ? ["1"] : [],
+    toggle: (v) => toggleOne("approved", approvedParam, v),
+    clear: () => writeUrl({ approved: null }),
+  };
+  const facets: Facet[] = isWf
+    ? [
+        {
+          key: "trigger",
+          label: "Trigger",
+          options: WORKFLOW_TRIGGERS.map((t) => ({ value: t, label: TRIGGER_LABELS[t], count: countOf((p) => p.workflow.trigger === t) })),
+          selected: triggers,
+          toggle: toggleTrigger,
+          clear: () => writeUrl({ triggers: null }),
+        },
+        {
+          key: "integrations",
+          label: "Integrations",
+          options: integrationOptions.map((i) => ({
+            value: i,
+            label: i,
+            count: countOf((p) => p.workflow.integrations.some((x) => x.toLowerCase() === i.toLowerCase())),
+            swatch: catalogIntegration(catalog, i)?.color,
+          })),
+          selected: integrations,
+          toggle: toggleIntegration,
+          clear: () => writeUrl({ integrations: null }),
+        },
+        teamFacet,
+        {
+          key: "stage",
+          label: "Stage",
+          options: WORKFLOW_STAGES.map((st) => ({ value: st, label: STAGE_LABELS[st], count: countOf((p) => (p.workflow.stage || "draft") === st) })),
+          selected: stages,
+          toggle: toggleStage,
+          clear: () => writeUrl({ stages: null }),
+        },
+        {
+          key: "origin",
+          label: "Origin",
+          single: true,
+          options: [
+            { value: "reference", label: "Reference architectures", count: countOf((p) => !p.parentId) },
+            { value: "adapted", label: "Adaptations", count: countOf((p) => !!p.parentId) },
+          ],
+          selected: origin === "all" ? [] : [origin],
+          toggle: (v) => toggleOne("origin", origin === "all" ? null : origin, v),
+          clear: () => writeUrl({ origin: null }),
+        },
+        {
+          key: "ready",
+          label: "Customer-ready",
+          single: true,
+          options: [{ value: "1", label: "Customer-ready only", count: countOf((p) => p.workflow.customerReady) }],
+          selected: readyOnly ? ["1"] : [],
+          toggle: () => writeUrl({ ready: readyOnly ? null : "1" }),
+          clear: () => writeUrl({ ready: null }),
+        },
+        ...(enablementOn ? [enablementFacet] : []),
+      ]
+    : [appFacet, teamFacet, ...(enablementOn ? [enablementFacet] : [])];
 
   return (
     <section className={styles.section}>
@@ -316,18 +405,6 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
       {/* ── Toolbar ── */}
       <div className={styles.toolbar}>
         <div className={styles.toolbarRow}>
-          <button
-            type="button"
-            className={styles.filtersBtn}
-            aria-pressed={filtersOpen}
-            aria-expanded={filtersOpen}
-            data-active={filtersOpen || activeCount > 0 ? "" : undefined}
-            onClick={() => writeUrl({ filters: filtersOpen ? null : "1" })}
-          >
-            <FunnelSimple weight="bold" size={16} />
-            Filters
-            {activeCount > 0 ? <span className={styles.badge}>{activeCount}</span> : null}
-          </button>
           <label className={styles.search}>
             <MagnifyingGlass size={18} className="muted" />
             <input
@@ -361,7 +438,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
                   writeUrl({
                     kind: k === "all" ? null : `${k}s`,
                     // Workflow-only filters don't apply to the other kinds.
-                    ...(k === "workflow" ? {} : { origin: null, triggers: null, integrations: null, ready: null }),
+                    ...(k === "workflow" ? {} : { origin: null, triggers: null, integrations: null, stages: null, ready: null }),
                   })
                 }
               >
@@ -371,204 +448,10 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
           </div>
           <SortMenu sorts={sorts} sort={sort} onChange={(v) => writeUrl({ sort: v })} />
         </div>
-        {originCounts ? (
-          <div className={styles.activeRow}>
-            <div className={styles.kindGroup} role="group" aria-label="Reference architectures or adaptations">
-              {(
-                [
-                  ["all", "All", originCounts.all],
-                  ["reference", "Reference architectures", originCounts.reference],
-                  ["adapted", "Adaptations", originCounts.adapted],
-                ] as [Origin, string, number][]
-              ).map(([o, label, n]) => (
-                <button
-                  key={o}
-                  type="button"
-                  className={styles.kindBtn}
-                  aria-pressed={origin === o}
-                  onClick={() => writeUrl({ origin: o === "all" ? null : o })}
-                >
-                  {label} <span className={styles.badge}>{n}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
-        {hasActive ? (
-          <div className={styles.activeRow}>
-            {activeChips.map((c) => (
-              <button
-                key={c.key}
-                type="button"
-                className={`${styles.activeChip} tone`}
-                style={toneStyle(c)}
-                onClick={c.remove}
-                aria-label={`Remove filter ${c.label}`}
-              >
-                {c.label}
-                <X weight="bold" size={10} />
-              </button>
-            ))}
-            <div className="grow" />
-            <button type="button" className={styles.clearAllText} onClick={clearFilters}>
-              Clear all
-            </button>
-          </div>
-        ) : null}
+        <FilterBar facets={facets} resultLabel={countLabel} onClearAll={clearFilters} />
       </div>
 
-      {/* ── Filters panel + results ── */}
       <div className={styles.body}>
-        {filtersOpen ? (
-          <aside className={styles.panel} aria-label="Filters">
-            <div className={styles.panelHead}>
-              <span className={styles.panelTitle}>Filters</span>
-              <button
-                type="button"
-                className={styles.panelClose}
-                onClick={() => writeUrl({ filters: null })}
-                aria-label="Close filters"
-              >
-                <X weight="bold" size={15} />
-              </button>
-            </div>
-
-            <div className={styles.group}>
-              <span className="eyebrow">App</span>
-              <div className={styles.optionList}>
-                {activeApps(catalog).map(({ name: app }) => {
-                  const on = apps.includes(app);
-                  const tone = appTone(catalog, app);
-                  const surfList = surfacesOf(catalog, app);
-                  const want = surfaces[app] ?? [];
-                  return (
-                    <div key={app} className={`${styles.optionBlock} tone`} style={toneStyle(tone)}>
-                      <button
-                        type="button"
-                        className={styles.option}
-                        role="checkbox"
-                        aria-checked={on}
-                        onClick={() => toggleApp(app)}
-                      >
-                        {on ? (
-                          <CheckSquare weight="fill" size={18} style={{ color: "var(--tone-ink)" }} />
-                        ) : (
-                          <Square size={18} style={{ color: "var(--tone-ink)" }} />
-                        )}
-                        <span className="grow">{app}</span>
-                      </button>
-                      {on && surfList.length ? (
-                        <div className={styles.surfaces} style={{ borderColor: "var(--tone-surface)" }}>
-                          <span className={styles.surfaceHint}>
-                            {want.length ? `${want.length} of ${surfList.length}` : "Any surface"}
-                          </span>
-                          {surfList.map((sf) => {
-                            const sOn = want.includes(sf);
-                            return (
-                              <button
-                                key={sf}
-                                type="button"
-                                className={`${styles.option} ${styles.optionSm}`}
-                                role="checkbox"
-                                aria-checked={sOn}
-                                onClick={() => toggleSurface(app, sf)}
-                              >
-                                {sOn ? (
-                                  <CheckSquare weight="fill" size={16} style={{ color: "var(--tone-ink)" }} />
-                                ) : (
-                                  <Square size={16} style={{ color: "var(--tone-ink)" }} />
-                                )}
-                                {sf}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className={styles.group}>
-              <span className="eyebrow" id="teams-label">
-                Team
-              </span>
-              <MultiSelect labelId="teams-label" options={activeTeams(catalog).map((t) => t.name)} selected={teams} onToggle={toggleTeam} noun="teams" />
-            </div>
-
-            {enablementOn ? (
-              <div className={styles.group}>
-                <span className="eyebrow">Enablement</span>
-                <div className={styles.optionList}>
-                  {(
-                    [
-                      ["approved", "1", "Enablement approved"],
-                      ["gold", "gold", "Gold standards only"],
-                    ] as const
-                  ).map(([key, value, label]) => {
-                    const on = approvedFilter === key;
-                    return (
-                      <button key={key} type="button" className={styles.option} role="checkbox" aria-checked={on} onClick={() => writeUrl({ approved: on ? null : value })}>
-                        {on ? <CheckSquare weight="fill" size={18} /> : <Square size={18} />}
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
-
-            {isWf ? (
-              <>
-                <div className={styles.group}>
-                  <span className="eyebrow">Trigger</span>
-                  <div className={styles.optionList}>
-                    {WORKFLOW_TRIGGERS.map((t) => {
-                      const on = triggers.includes(t);
-                      return (
-                        <button key={t} type="button" className={styles.option} role="checkbox" aria-checked={on} onClick={() => toggleTrigger(t)}>
-                          {on ? <CheckSquare weight="fill" size={18} /> : <Square size={18} />}
-                          {TRIGGER_LABELS[t]}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                {integrationOptions.length ? (
-                  <div className={styles.group}>
-                    <span className="eyebrow" id="integrations-label">
-                      Integrations
-                    </span>
-                    <MultiSelect labelId="integrations-label" options={integrationOptions} selected={integrations} onToggle={toggleIntegration} noun="integrations" />
-                  </div>
-                ) : null}
-                <div className={styles.group}>
-                  <span className="eyebrow">Sharing</span>
-                  <div className={styles.optionList}>
-                    <button
-                      type="button"
-                      className={styles.option}
-                      role="checkbox"
-                      aria-checked={readyOnly}
-                      onClick={() => writeUrl({ ready: readyOnly ? null : "1" })}
-                    >
-                      {readyOnly ? <CheckSquare weight="fill" size={18} /> : <Square size={18} />}
-                      Customer-ready only
-                    </button>
-                  </div>
-                </div>
-              </>
-            ) : null}
-
-            {hasActive ? (
-              <button type="button" className="btn btn-outline btn-sm on-slab" style={{ alignSelf: "flex-start" }} onClick={clearFilters}>
-                Clear all
-              </button>
-            ) : null}
-          </aside>
-        ) : null}
-
         <div className={styles.results}>
           {shown.length ? (
             <div className={styles.grid}>
@@ -714,80 +597,6 @@ function WorkflowCard({ prompt: p, forks, meId, catalog }: { prompt: Prompt; for
         <VoteButton promptId={p.id} count={p.upvoteUserIds.length} voted={p.upvoteUserIds.includes(meId)} />
       </div>
     </article>
-  );
-}
-
-/** A searchable multi-select: chosen values as removable tokens, options in a dropdown. */
-function MultiSelect({ labelId, options, selected, onToggle, noun }: { labelId: string; options: string[]; selected: string[]; onToggle: (v: string) => void; noun: string }) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const wrap = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
-  const q = query.trim().toLowerCase();
-  const shown = options.filter((o) => !q || o.toLowerCase().includes(q));
-  return (
-    <div ref={wrap} className={styles.ms}>
-      <div className={styles.msField} onClick={() => setOpen(true)}>
-        {selected.map((v) => (
-          <span key={v} className={styles.msToken}>
-            {v}
-            <button type="button" aria-label={`Remove ${v}`} onClick={(e) => {
-                e.stopPropagation();
-                onToggle(v);
-              }}>
-              <X weight="bold" size={10} />
-            </button>
-          </span>
-        ))}
-        <input
-          className={styles.msInput}
-          role="combobox"
-          aria-expanded={open}
-          aria-labelledby={labelId}
-          aria-controls={`${labelId}-list`}
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") setOpen(false);
-            if (e.key === "Enter" && shown[0]) {
-              e.preventDefault();
-              onToggle(shown[0]);
-              setQuery("");
-            }
-            if (e.key === "Backspace" && !query && selected.length) onToggle(selected[selected.length - 1]);
-          }}
-          placeholder={selected.length ? "" : `Search ${options.length} ${noun}…`}
-        />
-      </div>
-      {open ? (
-        <ul className={styles.msList} id={`${labelId}-list`} role="listbox" aria-multiselectable="true">
-          {shown.length ? (
-            shown.map((o) => {
-              const on = selected.includes(o);
-              return (
-                <li key={o} role="option" aria-selected={on} className={styles.msOpt} onMouseDown={(e) => e.preventDefault()} onClick={() => onToggle(o)}>
-                  {on ? <CheckSquare weight="fill" size={18} /> : <Square size={18} />}
-                  {o}
-                </li>
-              );
-            })
-          ) : (
-            <li className={styles.msEmpty}>No {noun} match “{query}”.</li>
-          )}
-        </ul>
-      ) : null}
-    </div>
   );
 }
 
