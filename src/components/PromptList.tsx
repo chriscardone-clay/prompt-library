@@ -22,7 +22,7 @@ import { ago, plural } from "@/lib/format";
 import { searchPrompts } from "@/lib/search";
 import type { Profile, Prompt } from "@/lib/types";
 import { Avatar } from "./Avatar";
-import { type Facet, FilterBar } from "./FilterBar";
+import { type Facet, FilterBar, type TextField } from "./FilterBar";
 import { FavoriteButton } from "./FavoriteButton";
 import { ApprovalTag, AppTag, SkillTag, WorkflowTag } from "./Tag";
 import { VoteButton } from "./VoteButton";
@@ -67,6 +67,11 @@ function serialiseSurfaces(s: Record<string, string[]>): string | null {
   return parts.length ? parts.join(",") : null;
 }
 const listParam = (v: string[]) => (v.length ? v.join(",") : null);
+
+/** What "Contents" matches: the prompt text, skill files or workflow .md (text files only). */
+function contentsOf(p: Prompt): string {
+  return [p.body, ...p.files.filter((f) => !f.path).map((f) => f.content)].join("\n").toLowerCase();
+}
 
 export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn = false, manageIntegrations = false, enablementOn = false }: Props) {
   const defaultSort: Sort = enablementOn ? "recommended" : "top";
@@ -123,6 +128,16 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
     writeUrl({ q: null });
   };
 
+  // Per-field text filters (drawer): typed locally, written to the URL debounced.
+  const textTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const [textDraft, setTextDraft] = useState<Record<string, string>>({});
+  const textValue = (key: string) => textDraft[key] ?? params.get(key) ?? "";
+  const setText = (key: string, value: string) => {
+    setTextDraft((d) => ({ ...d, [key]: value }));
+    clearTimeout(textTimers.current[key]);
+    textTimers.current[key] = setTimeout(() => writeUrl({ [key]: value.trim() ? value : null }), 250);
+  };
+
   // ── Filter state (all in the URL) ─────────────────────────────────
   const kindParam = params.get("kind");
   const kind: KindFilter =
@@ -137,6 +152,10 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
   const apps = (params.get("apps") ?? "").split(",").filter((a) => isKnownApp(catalog, a));
   const surfaces = parseSurfaces(params.get("surfaces"), catalog);
   const teams = (params.get("teams") ?? "").split(",").filter((t) => isKnownTeam(catalog, t));
+  const authors = (params.get("authors") ?? "").split(",").filter(Boolean);
+  const titleQ = textValue("title").trim().toLowerCase();
+  const descQ = textValue("desc").trim().toLowerCase();
+  const bodyQ = textValue("contents").trim().toLowerCase();
   const sortParam = params.get("sort") ?? defaultSort;
   const sort: Sort = isSort(sortParam) && (sorts as readonly string[]).includes(sortParam) ? sortParam : defaultSort;
   const approvedParam = enablementOn ? params.get("approved") : null;
@@ -161,19 +180,27 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
     writeUrl({ triggers: listParam(triggers.includes(t as never) ? triggers.filter((x) => x !== t) : [...triggers, t]) });
   const toggleIntegration = (i: string) =>
     writeUrl({ integrations: listParam(integrations.includes(i) ? integrations.filter((x) => x !== i) : [...integrations, i]) });
+  const toggleAuthor = (id: string) =>
+    writeUrl({ authors: listParam(authors.includes(id) ? authors.filter((x) => x !== id) : [...authors, id]) });
   const toggleStage = (st: string) =>
     writeUrl({ stages: listParam(stages.includes(st as never) ? stages.filter((x) => x !== st) : [...stages, st]) });
   const clearFilters = () => {
     if (qTimer.current) clearTimeout(qTimer.current);
     setQ("");
     lastWrittenQ.current = "";
-    writeUrl({ apps: null, surfaces: null, teams: null, q: null, triggers: null, integrations: null, stages: null, ready: null, approved: null, origin: null });
+    for (const t of Object.values(textTimers.current)) clearTimeout(t);
+    setTextDraft({});
+    writeUrl({ apps: null, surfaces: null, teams: null, authors: null, q: null, title: null, desc: null, contents: null, triggers: null, integrations: null, stages: null, ready: null, approved: null, origin: null });
   };
 
   const activeCount =
     apps.length +
     Object.values(surfaces).reduce((n, v) => n + (v?.length ?? 0), 0) +
     teams.length +
+    authors.length +
+    (titleQ ? 1 : 0) +
+    (descQ ? 1 : 0) +
+    (bodyQ ? 1 : 0) +
     triggers.length +
     integrations.length +
     stages.length +
@@ -217,6 +244,10 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
       );
     }
     if (teams.length) out = out.filter((p) => p.audiences.some((a) => teams.includes(a)));
+    if (authors.length) out = out.filter((p) => authors.includes(p.ownerId));
+    if (titleQ) out = out.filter((p) => p.title.toLowerCase().includes(titleQ));
+    if (descQ) out = out.filter((p) => p.description.toLowerCase().includes(descQ));
+    if (bodyQ) out = out.filter((p) => contentsOf(p).includes(bodyQ));
     if (triggers.length) out = out.filter((p) => p.workflow.trigger !== "" && triggers.includes(p.workflow.trigger));
     if (integrations.length) {
       const want = integrations.map((i) => i.toLowerCase());
@@ -249,7 +280,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
       return t(b.updatedAt) - t(a.updatedAt);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prompts, kind, q, params.get("apps"), params.get("surfaces"), params.get("teams"), params.get("triggers"), params.get("integrations"), params.get("stages"), readyOnly, approvedFilter, sort, catalog]);
+  }, [prompts, kind, q, params.get("apps"), params.get("surfaces"), params.get("teams"), params.get("authors"), titleQ, descQ, bodyQ, params.get("triggers"), params.get("integrations"), params.get("stages"), readyOnly, approvedFilter, sort, catalog]);
 
   const shown = origin === "all" ? list : list.filter((p) => (origin === "adapted" ? !!p.parentId : !p.parentId));
 
@@ -312,6 +343,33 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
     toggle: toggleTeam,
     clear: () => writeUrl({ teams: null }),
   };
+  const authorFacet: Facet = (() => {
+    const byId = new Map<string, { name: string; n: number }>();
+    for (const p of base) {
+      const cur = byId.get(p.ownerId) ?? { name: p.owner.name, n: 0 };
+      cur.n++;
+      byId.set(p.ownerId, cur);
+    }
+    return {
+      key: "author",
+      label: "Author",
+      options: [...byId.entries()].sort((a, b) => b[1].n - a[1].n || a[1].name.localeCompare(b[1].name)).map(([id, v]) => ({ value: id, label: v.name, count: v.n })),
+      selected: authors,
+      toggle: toggleAuthor,
+      clear: () => writeUrl({ authors: null }),
+    };
+  })();
+  const textFields: TextField[] = [
+    { key: "title", label: "Title", placeholder: "Words in the title", value: textValue("title"), onChange: (v) => setText("title", v) },
+    { key: "desc", label: "Description", placeholder: "Words in the description", value: textValue("desc"), onChange: (v) => setText("desc", v) },
+    {
+      key: "contents",
+      label: "Contents",
+      placeholder: kind === "workflow" ? "Words in the .md" : kind === "skill" ? "Words in the skill files" : "Prompt text, skill files, .md",
+      value: textValue("contents"),
+      onChange: (v) => setText("contents", v),
+    },
+  ];
   const enablementFacet: Facet = {
     key: "enablement",
     label: "Enablement",
@@ -348,6 +406,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
           clear: () => writeUrl({ integrations: null }),
         },
         teamFacet,
+        authorFacet,
         {
           key: "stage",
           label: "Stage",
@@ -379,7 +438,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
         },
         ...(enablementOn ? [enablementFacet] : []),
       ]
-    : [appFacet, teamFacet, ...(enablementOn ? [enablementFacet] : [])];
+    : [appFacet, teamFacet, authorFacet, ...(enablementOn ? [enablementFacet] : [])];
 
   return (
     <section className={styles.section}>
@@ -448,7 +507,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
           </div>
           <SortMenu sorts={sorts} sort={sort} onChange={(v) => writeUrl({ sort: v })} />
         </div>
-        <FilterBar facets={facets} resultLabel={countLabel} onClearAll={clearFilters} />
+        <FilterBar facets={facets} textFields={textFields} resultLabel={countLabel} onClearAll={clearFilters} />
       </div>
 
       <div className={styles.body}>
