@@ -4,14 +4,14 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { ALLOWED_EMAIL_DOMAIN, SKILL_BUCKET } from "@/lib/constants";
-import { getCatalog } from "@/lib/data";
+import { getCatalog, workflowsEnabled } from "@/lib/data";
 import { type ActionResult, normaliseDraft } from "@/lib/draft";
 import { createClient } from "@/lib/supabase/server";
 import { esc } from "@/lib/digest/blocks";
 import { getSiteUrl } from "@/lib/site";
 import { openSlackDm, postSlackMessage, slackConfigured } from "@/lib/slack";
 import { getRequestOrigin } from "@/lib/site";
-import type { PromptDraft } from "@/lib/types";
+import type { PromptDraft, WorkflowMeta } from "@/lib/types";
 
 export type { ActionResult } from "@/lib/draft";
 
@@ -86,6 +86,17 @@ function revalidatePrompt(id?: string) {
   if (id) revalidatePath(`/prompts/${id}`);
 }
 
+/** Workflow columns for an insert or update; nothing for prompts and skills. */
+function workflowColumns(kind: string, w: WorkflowMeta | undefined) {
+  if (kind !== "workflow" || !w) return {};
+  return {
+    workflow_trigger: w.trigger,
+    workflow_stage: w.stage,
+    integrations: w.integrations,
+    customer_ready: w.customerReady,
+  };
+}
+
 // ── Prompts ─────────────────────────────────────────────────────────
 export async function createPrompt(
   input: PromptDraft,
@@ -106,6 +117,10 @@ export async function createPrompt(
   const v = normaliseDraft(input, parentId ? [id, parentId] : [id], await getCatalog());
   if (!v.ok) return v;
   const d = v.data;
+  if (d.kind === "workflow") {
+    if (!(await workflowsEnabled())) return { ok: false, error: "Workflows aren't available to you yet." };
+    if (parentId && !d.forkNote) return { ok: false, error: "Say what this adaptation is for." };
+  }
 
   // A fork copies the parent's binary files into its own folder so it keeps
   // working even if the parent later becomes private or is deleted.
@@ -132,6 +147,7 @@ export async function createPrompt(
     owner_id: uid,
     parent_id: parentId,
     fork_note: parentId ? d.forkNote : "",
+    ...workflowColumns(d.kind, d.workflow),
   });
   if (error) return { ok: false, error: error.message };
   const appsRes = await supabase
@@ -170,7 +186,10 @@ export async function updatePrompt(
   if (!v.ok) return v;
   const d = v.data;
   if ((existing.kind ?? "prompt") !== d.kind) {
-    return { ok: false, error: "A prompt can't be turned into a skill, or the other way round." };
+    return { ok: false, error: "An item can't change between prompt, skill and workflow." };
+  }
+  if (d.kind === "workflow" && !(await workflowsEnabled())) {
+    return { ok: false, error: "Workflows aren't available to you yet." };
   }
 
   const { error } = await supabase
@@ -184,6 +203,9 @@ export async function updatePrompt(
       links: d.links,
       audiences: d.audiences,
       visibility: d.visibility,
+      ...workflowColumns(d.kind, d.workflow),
+      // An adaptation's "Adapted for" can be corrected later; other forks keep their note.
+      ...(d.kind === "workflow" && existing.parent_id && d.forkNote ? { fork_note: d.forkNote } : {}),
     })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };

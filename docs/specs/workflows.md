@@ -211,6 +211,32 @@ One paragraph: what the flow does, for whom, and what it writes.
 4. **Type layer:** `KINDS` / `KIND_LABELS` in `src/lib/constants.ts` plus the `Prompt` / `PromptDraft` types. Then work through the roughly 60 places across 23 files that branch on `"skill"`. Most are `kind === "skill"` checks that need a third case, not new logic.
 5. **Markdown renderer:** `react-markdown` + `remark-gfm` + `rehype-slug`, with no `rehype-raw` (so no raw HTML), rendered server-side. A shared `<MarkdownDoc>` component. Skills could use it later for SKILL.md.
 
+## Build phases
+
+**Phase 1 (built, behind `WORKFLOWS_BETA`)**
+- The workflow item type, migrations 0021–0022, and seeded `Clay Workflows` app and `Services` team.
+- Upload, write or paste the `.md`, stored byte for byte. The editor refuses files that aren't valid UTF-8 instead of altering them. Docs are capped at 512 KB, to fit the existing `files` column limit.
+- Title and description filled in from the doc, with suggested trigger and integrations.
+- Discover:
+  - a Workflows tab with All / Reference architectures / Adaptations;
+  - Trigger, Integrations and Customer-ready filters;
+  - workflow cards.
+- The detail page:
+  - the doc rendered or as source, with a contents list;
+  - Copy Markdown and Download .md, including earlier versions;
+  - "Adapted for" on adaptations and an Adaptations tree;
+  - the customer-ready check for owners and editors.
+- Adaptations must say what they're "Adapted for". They start as Draft and not customer-ready.
+- Workflows are kept out of the Slack assistant, the MCP connector and the weekly digest.
+
+**Phase 2 (not built yet)**
+- Publish links (`/s/<token>`) and their security review.
+- The admin-managed Integrations catalog and the Workflow maintainers role. Phase 1 takes free-text integrations with suggestions.
+- Attachments.
+- Workflows in the Slack assistant, the connector (`get_workflow`) and the digest.
+- Search synonyms in SQL.
+- Snapshotting trigger, stage and integrations in version history.
+
 ## Rollout
 
 1. Ship behind `NEXT_PUBLIC_WORKFLOWS=1` and try it on preview with Carolyn's inbound-routing doc.

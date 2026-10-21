@@ -1,6 +1,7 @@
-import { Files, Heart, Plus } from "@phosphor-icons/react/dist/ssr";
+import { Files, FlowArrow, Heart, Plus } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { Suspense } from "react";
+import { workflowsEnabled } from "@/lib/data";
 import type { Profile } from "@/lib/types";
 import { AccountMenu } from "./AccountMenu";
 import { ClayLogo } from "./ClayLogo";
@@ -15,7 +16,8 @@ interface Props {
   slackNudge?: boolean;
 }
 
-export function Header({ user, active = null, slackNudge = false }: Props) {
+export async function Header({ user, active = null, slackNudge = false }: Props) {
+  const workflows = await workflowsEnabled();
   return (
     <>
     <header className={styles.header}>
@@ -49,6 +51,12 @@ export function Header({ user, active = null, slackNudge = false }: Props) {
       </nav>
       <div className="grow" />
       <div className={styles.actions}>
+        {workflows ? (
+          <Link href="/workflows/new" className={`btn btn-outline ${styles.newWorkflow}`}>
+            <FlowArrow weight="bold" size={14} />
+            <span className={styles.newLabel}>New workflow</span>
+          </Link>
+        ) : null}
         <Link href="/skills/new" className="btn btn-outline">
           <Files weight="bold" size={14} />
           <span className={styles.newLabel}>New skill</span>

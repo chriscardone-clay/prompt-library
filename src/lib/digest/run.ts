@@ -31,7 +31,7 @@ export interface Composed {
 export async function composeDigest(client: SupabaseClient, window: WeekWindow, editorsNote: string): Promise<Composed> {
   const { data, error } = await client.rpc("weekly_digest", { p_from: window.from, p_to: window.to });
   if (error) throw new Error(`weekly_digest: ${error.message}`);
-  const d = data as DigestData;
+  const d = await withoutWorkflows(client, data as DigestData);
   const message = buildDigestMessage(d, {
     siteUrl: getSiteUrl(),
     label: window.label,
@@ -40,6 +40,21 @@ export async function composeDigest(client: SupabaseClient, window: WeekWindow, 
     authorUrl: AUTHOR_SLACK_URL,
   });
   return { window, data: d, message };
+}
+
+/** Workflows are in beta for a few people, so the channel digest leaves them out for now. */
+async function withoutWorkflows(client: SupabaseClient, d: DigestData): Promise<DigestData> {
+  const { data } = await client.from("prompts").select("id").eq("kind", "workflow");
+  const ids = new Set(((data ?? []) as { id: string }[]).map((r) => r.id));
+  if (!ids.size) return d;
+  const keep = <T extends { id: string }>(xs: T[] | null | undefined) => (xs ?? []).filter((x) => !ids.has(x.id));
+  return {
+    ...d,
+    top: keep(d.top),
+    new_items: keep(d.new_items),
+    updated: keep(d.updated),
+    open_feedback_items: keep(d.open_feedback_items),
+  };
 }
 
 export async function getDigestSettings(client: SupabaseClient): Promise<DigestSettings> {

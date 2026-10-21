@@ -82,11 +82,11 @@ async function runSearch(client: SupabaseClient, intent: Intent, raw: string, li
  * still discoverable when the question is vague.
  */
 export async function loadCandidates(client: SupabaseClient, question: string): Promise<{ items: Candidate[]; total: number; shortlisted: boolean }> {
-  const { count } = await client.from("prompts").select("id", { count: "exact", head: true }).eq("visibility", "public");
+  const { count } = await client.from("prompts").select("id", { count: "exact", head: true }).eq("visibility", "public").neq("kind", "workflow");
   const total = count ?? 0;
 
   if (total <= SEND_ALL_UP_TO) {
-    const { data, error } = await client.from("prompts").select(SELECT).eq("visibility", "public").order("updated_at", { ascending: false });
+    const { data, error } = await client.from("prompts").select(SELECT).eq("visibility", "public").neq("kind", "workflow").order("updated_at", { ascending: false });
     if (error) throw new Error(`loadCandidates: ${error.message}`);
     return { items: ((data ?? []) as unknown as Row[]).map(toCandidate), total, shortlisted: false };
   }
@@ -94,11 +94,11 @@ export async function loadCandidates(client: SupabaseClient, question: string): 
   const intent = parseIntent(question, await appNames(client));
   const [hits, newest] = await Promise.all([
     runSearch(client, intent, question, SHORTLIST),
-    client.from("prompts").select(SELECT).eq("visibility", "public").order("created_at", { ascending: false }).limit(NEWEST_EXTRA),
+    client.from("prompts").select(SELECT).eq("visibility", "public").neq("kind", "workflow").order("created_at", { ascending: false }).limit(NEWEST_EXTRA),
   ]);
   const order = new Map(hits.map((h, i) => [h.id, i]));
   const ids = [...order.keys()];
-  const { data: hitRows } = ids.length ? await client.from("prompts").select(SELECT).in("id", ids) : { data: [] };
+  const { data: hitRows } = ids.length ? await client.from("prompts").select(SELECT).in("id", ids).neq("kind", "workflow") : { data: [] };
   const seen = new Set<string>();
   const items: Candidate[] = [];
   for (const r of [...((hitRows ?? []) as unknown as Row[]), ...((newest.data ?? []) as unknown as Row[])]) {

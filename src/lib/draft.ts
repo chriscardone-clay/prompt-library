@@ -4,9 +4,20 @@
  * enforce the same limits and catalog rules. Pure: no I/O.
  */
 import { type Catalog, isKnownApp, isKnownTeam, surfacesOf } from "@/lib/catalog";
-import { ALLOWED_EMAIL_DOMAIN, isVisibility, MAX_SKILL_BYTES, MAX_SKILL_FILES, MAX_SKILL_TEXT_BYTES } from "@/lib/constants";
+import {
+  ALLOWED_EMAIL_DOMAIN,
+  isStage,
+  isTrigger,
+  isVisibility,
+  MAX_INTEGRATIONS,
+  MAX_SKILL_BYTES,
+  MAX_SKILL_FILES,
+  MAX_SKILL_TEXT_BYTES,
+  MAX_WORKFLOW_DOC_BYTES,
+} from "@/lib/constants";
 import { fileBytes, formatBytes, linkHost, skillMd } from "@/lib/skills";
-import type { PromptApp, PromptDraft, SkillFile, SkillLink } from "@/lib/types";
+import type { PromptApp, PromptDraft, SkillFile, SkillLink, WorkflowMeta } from "@/lib/types";
+import { isMarkdownName } from "@/lib/workflows";
 
 export type ActionResult<T = undefined> =
   | { ok: true; data: T }
@@ -23,7 +34,7 @@ const MAX_LINKS = 20;
 const hasLinkInput = (input: PromptDraft) => (input.links ?? []).some((l) => String(l?.url ?? "").trim());
 
 export function normaliseDraft(input: PromptDraft, allowedFolders: string[], catalog: Catalog): ActionResult<PromptDraft> {
-  const kind = input.kind === "skill" ? "skill" : "prompt";
+  const kind = input.kind === "skill" ? "skill" : input.kind === "workflow" ? "workflow" : "prompt";
   const title = (input.title ?? "").trim();
   const description = (input.description ?? "").trim();
   if (!title) return { ok: false, error: "Add a title." };
@@ -83,6 +94,21 @@ export function normaliseDraft(input: PromptDraft, allowedFolders: string[], cat
     }
 
     if (!files.length && !hasLinkInput(input)) return { ok: false, error: "Add at least one file or link." };
+  } else if (kind === "workflow") {
+    // One .md, kept exactly as received: no line-ending or whitespace changes.
+    const doc = (input.files ?? [])[0];
+    const name = String(doc?.name ?? "")
+      .trim()
+      .replace(/^.*[/\\]/, "");
+    const content = typeof doc?.content === "string" ? doc.content : "";
+    if (!doc || doc.path || !content.trim()) return { ok: false, error: "Add the workflow's .md file." };
+    if (!isMarkdownName(name)) return { ok: false, error: "The workflow file needs a .md name." };
+    if (name.length > MAX_FILE_NAME) return { ok: false, error: "The file name is too long." };
+    const bytes = fileBytes({ name, content });
+    if (bytes > MAX_WORKFLOW_DOC_BYTES) {
+      return { ok: false, error: `The .md is ${formatBytes(bytes)}; the limit is ${formatBytes(MAX_WORKFLOW_DOC_BYTES)}.` };
+    }
+    files = [{ name, content }];
   } else {
     files = [];
   }
@@ -106,8 +132,13 @@ export function normaliseDraft(input: PromptDraft, allowedFolders: string[], cat
   if (links.length > MAX_LINKS) return { ok: false, error: `Up to ${MAX_LINKS} links per ${kind}.` };
   if (kind === "skill" && !files.length && !links.length) return { ok: false, error: "Add at least one file or link." };
 
-  // For skills the body mirrors SKILL.md so search and history work unchanged.
-  const body = kind === "skill" ? skillMd(files) : (input.body ?? "").replace(/\r\n/g, "\n");
+  // Skills and workflows mirror their main file into body so search and history work unchanged.
+  const body =
+    kind === "skill"
+      ? skillMd(files)
+      : kind === "workflow"
+        ? files[0].content.slice(0, 50_000)
+        : (input.body ?? "").replace(/\r\n/g, "\n");
   if (kind === "prompt" && !body.trim()) return { ok: false, error: "Add the prompt itself." };
   if (body.length > 50_000) return { ok: false, error: "Prompt is too long." };
   const notes = (input.notes ?? "").replace(/\r\n/g, "\n").trim();
@@ -140,10 +171,28 @@ export function normaliseDraft(input: PromptDraft, allowedFolders: string[], cat
     }
   }
 
+  let workflow: WorkflowMeta | undefined;
+  if (kind === "workflow") {
+    const w = input.workflow;
+    const integrations: string[] = [];
+    for (const raw of w?.integrations ?? []) {
+      const name = String(raw ?? "").trim().replace(/\s+/g, " ").slice(0, 40);
+      if (name && !integrations.some((x) => x.toLowerCase() === name.toLowerCase())) integrations.push(name);
+    }
+    if (integrations.length > MAX_INTEGRATIONS) return { ok: false, error: `Up to ${MAX_INTEGRATIONS} integrations.` };
+    workflow = {
+      trigger: isTrigger(w?.trigger) ? w.trigger : "",
+      stage: isStage(w?.stage) ? w.stage : "draft",
+      integrations,
+      customerReady: !!w?.customerReady,
+    };
+  }
+
   return {
     ok: true,
     data: {
       kind,
+      workflow,
       title,
       description,
       body,

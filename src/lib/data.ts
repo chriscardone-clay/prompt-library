@@ -4,7 +4,8 @@ import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { avatarIsStale, syncSlackAvatar } from "./avatars";
 import { type Catalog, type CatalogApp, type CatalogTeam } from "./catalog";
-import { isVisibility } from "./constants";
+import { isStage, isTrigger, isVisibility } from "./constants";
+import { workflowsAllowedByEnv } from "./features";
 import { personFromEmail, personFromProfile, UNKNOWN_PERSON } from "./people";
 import { asFiles, asLinks } from "./skills";
 import type { Feedback, Person, Profile, Prompt, PromptNode, PromptVersion } from "./types";
@@ -25,6 +26,10 @@ export interface PromptRow {
   notes: string | null;
   files: unknown;
   links: unknown;
+  workflow_trigger?: string | null;
+  workflow_stage?: string | null;
+  integrations?: string[] | null;
+  customer_ready?: boolean | null;
   audiences: string[] | null;
   visibility: string;
   owner_id: string;
@@ -43,6 +48,7 @@ export interface PromptRow {
 export const PROMPT_SELECT = `
   id, kind, title, description, body, notes, files, links, audiences, visibility, owner_id, parent_id,
   fork_note, last_edited_by, created_at, updated_at,
+  workflow_trigger, workflow_stage, integrations, customer_ready,
   owner:profiles!prompts_owner_id_fkey ( id, email, name, avatar_url ),
   prompt_apps ( app, surfaces, model, model_required ),
   prompt_editors ( email, profile:profiles!prompt_editors_profile_id_fkey ( id, email, name, avatar_url ) ),
@@ -57,13 +63,19 @@ function toPerson(p: ProfileRow | null | undefined): Person {
 export function toPrompt(r: PromptRow): Prompt {
   return {
     id: r.id,
-    kind: r.kind === "skill" ? "skill" : "prompt",
+    kind: r.kind === "skill" ? "skill" : r.kind === "workflow" ? "workflow" : "prompt",
     title: r.title,
     description: r.description ?? "",
     body: r.body,
     notes: r.notes ?? "",
     files: asFiles(r.files),
     links: asLinks(r.links),
+    workflow: {
+      trigger: isTrigger(r.workflow_trigger) ? r.workflow_trigger : "",
+      stage: isStage(r.workflow_stage) ? r.workflow_stage : "",
+      integrations: (r.integrations ?? []).filter((i) => typeof i === "string" && i.trim()),
+      customerReady: !!r.customer_ready,
+    },
     audiences: (r.audiences ?? []).filter((a) => typeof a === "string" && a.trim()),
     visibility: isVisibility(r.visibility) ? r.visibility : "public",
     ownerId: r.owner_id,
@@ -116,6 +128,14 @@ export const isAdmin = cache(async (): Promise<boolean> => {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("is_admin");
   return !error && data === true;
+});
+
+/** Whether the signed-in person can see and create workflows (beta; see features.ts). */
+export const workflowsEnabled = cache(async (): Promise<boolean> => {
+  const user = await getCurrentUser();
+  if (!user) return false;
+  if (workflowsAllowedByEnv(user.email)) return true;
+  return isAdmin();
 });
 
 // ── Catalog (apps, surfaces, teams) ─────────────────────────────────
@@ -191,7 +211,8 @@ export const listPrompts = cache(async (): Promise<Prompt[]> => {
     .select(PROMPT_SELECT)
     .order("updated_at", { ascending: false });
   if (error) throw new Error(`listPrompts: ${error.message}`);
-  return ((data ?? []) as unknown as PromptRow[]).map(toPrompt);
+  const all = ((data ?? []) as unknown as PromptRow[]).map(toPrompt);
+  return (await workflowsEnabled()) ? all : all.filter((p) => p.kind !== "workflow");
 });
 
 export async function getPrompt(id: string): Promise<Prompt | null> {
@@ -205,7 +226,9 @@ export async function getPrompt(id: string): Promise<Prompt | null> {
     if (error.code === "22P02") return null; // not a uuid
     throw new Error(`getPrompt: ${error.message}`);
   }
-  return data ? toPrompt(data as unknown as PromptRow) : null;
+  if (!data) return null;
+  const p = toPrompt(data as unknown as PromptRow);
+  return p.kind === "workflow" && !(await workflowsEnabled()) ? null : p;
 }
 
 /** Lightweight rows for fork counts and the variants tree. */

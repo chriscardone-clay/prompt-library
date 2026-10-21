@@ -533,3 +533,38 @@
     flex-basis: 100%;
   }
 }
+
+/* Workflow: suggestions from an uploaded .md, customer-ready findings */
+.suggest {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: var(--radius-lg);
+  background: var(--slushie-100);
+}
+.findings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.finding {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--oat-100);
+  border: 1px solid var(--grey-line);
+  min-width: 0;
+}
+.findingIcon {
+  color: var(--lemon-500);
+  flex: none;
+  margin-top: 2px;
+}
+.okIcon {
+  color: var(--lime-400);
+  flex: none;
+  margin-top: 2px;
+}

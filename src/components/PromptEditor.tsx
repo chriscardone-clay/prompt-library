@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   CaretDown,
   CaretUp,
+  CheckCircle,
   CheckSquare,
   Cube,
   FileText,
@@ -16,6 +17,7 @@ import {
   Square,
   Trash,
   UploadSimple,
+  Warning,
   X,
 } from "@phosphor-icons/react";
 import Link from "next/link";
@@ -25,10 +27,19 @@ import { createPrompt, updatePrompt } from "@/app/actions";
 import { activeApps, activeTeams, appTone, REQUIRED_TONE, surfacesOf, toneStyle, type Catalog } from "@/lib/catalog";
 import {
   ALLOWED_EMAIL_DOMAIN,
+  MAX_INTEGRATIONS,
   MAX_SKILL_BYTES,
   MAX_SKILL_TEXT_BYTES,
+  MAX_WORKFLOW_DOC_BYTES,
   SKILL_TEMPLATE,
+  STAGE_LABELS,
+  SUGGESTED_INTEGRATIONS,
+  TRIGGER_LABELS,
+  WORKFLOW_STAGES,
+  WORKFLOW_TEMPLATE,
+  WORKFLOW_TRIGGERS,
   type Visibility,
+  type WorkflowTrigger,
 } from "@/lib/constants";
 import { personFromEmail } from "@/lib/people";
 import { parsePlaceholders } from "@/lib/placeholders";
@@ -41,7 +52,25 @@ import {
   skillTitleFrom,
 } from "@/lib/skills";
 import { uploadSkillBinary } from "@/lib/supabase/storage";
-import { isBinaryFile, type Person, type PromptApp, type PromptDraft, type SkillFile } from "@/lib/types";
+import {
+  EMPTY_WORKFLOW,
+  isBinaryFile,
+  type Person,
+  type PromptApp,
+  type PromptDraft,
+  type SkillFile,
+  type WorkflowMeta,
+} from "@/lib/types";
+import {
+  decodeExact,
+  docFacts,
+  docFileName,
+  isMarkdownName,
+  scanForInternal,
+  suggestIntegrations,
+  suggestTrigger,
+  unpackDoc,
+} from "@/lib/workflows";
 import { isBinaryName, looksBinary, unzip } from "@/lib/zip";
 import { Avatar } from "./Avatar";
 import { useToast } from "./Toast";
@@ -52,7 +81,7 @@ import skillStyles from "./Skill.module.css";
 export type EditorMode = "create" | "edit" | "fork";
 /** How a new skill arrives: pick a route first, then the form appears. */
 type Route = "" | "upload" | "write" | "link" | "existing";
-type Section = "" | "apps" | "auds" | "vis" | "team";
+type Section = "" | "apps" | "auds" | "vis" | "team" | "trigger" | "integ" | "stage" | "ready";
 
 interface Props {
   mode: EditorMode;
@@ -84,10 +113,17 @@ export function PromptEditor({
   cancelHref,
   catalog,
 }: Props) {
-  const [d, setD] = useState<PromptDraft>(initial);
+  // A workflow's .md arrives packed (see packDoc) so its bytes survive the trip.
+  const [d, setD] = useState<PromptDraft>(() =>
+    initial.kind === "workflow" && initial.files[0]
+      ? { ...initial, files: [{ ...initial.files[0], content: unpackDoc(initial.files[0].content) }] }
+      : initial,
+  );
   const [fileIdx, setFileIdx] = useState(0);
-  // New skills start by choosing how the skill arrives; everything else has an "existing" route.
-  const [route, setRoute] = useState<Route>(mode === "create" && initial.kind === "skill" ? "" : "existing");
+  // New skills and workflows start by choosing how they arrive; everything else has an "existing" route.
+  const [route, setRoute] = useState<Route>(
+    mode === "create" && (initial.kind === "skill" || initial.kind === "workflow") ? "" : "existing",
+  );
   // The Details accordion opens one section at a time.
   const [openSec, setOpenSec] = useState<Section>("");
   const [invite, setInvite] = useState("");
@@ -107,16 +143,50 @@ export function PromptEditor({
 
   const upd = (patch: Partial<PromptDraft>) => setD((prev) => ({ ...prev, ...patch }));
   const isSkill = d.kind === "skill";
-  const noun = isSkill ? "skill" : "prompt";
+  const isWf = d.kind === "workflow";
+  const isPrompt = d.kind === "prompt";
+  const noun = isSkill ? "skill" : isWf ? "workflow" : "prompt";
+
+  // ── Workflow (.md + facts) ────────────────────────────────────────
+  const wf = d.workflow ?? EMPTY_WORKFLOW;
+  const setWf = (patch: Partial<WorkflowMeta>) =>
+    setD((prev) => ({ ...prev, workflow: { ...(prev.workflow ?? EMPTY_WORKFLOW), ...patch } }));
+  const doc = isWf ? d.files[0] : undefined;
+  const docBytes = doc ? fileBytes(doc) : 0;
+  const docTooBig = docBytes > MAX_WORKFLOW_DOC_BYTES;
+  const docContent = doc?.content ?? "";
+  const findings = useMemo(() => (isWf && docContent ? scanForInternal(docContent) : []), [isWf, docContent]);
+  const [suggest, setSuggest] = useState<{ trigger: WorkflowTrigger | ""; integrations: string[] } | null>(null);
+  const suggestLeft = !!suggest && (!!suggest.trigger || suggest.integrations.length > 0);
+  const [intInput, setIntInput] = useState("");
+  const addIntegration = (raw: string) => {
+    const name = raw.trim().replace(/\s+/g, " ").slice(0, 40);
+    if (!name) return;
+    setD((prev) => {
+      const cur = prev.workflow ?? EMPTY_WORKFLOW;
+      if (cur.integrations.some((x) => x.toLowerCase() === name.toLowerCase()) || cur.integrations.length >= MAX_INTEGRATIONS) return prev;
+      return { ...prev, workflow: { ...cur, integrations: [...cur.integrations, name] } };
+    });
+  };
+  const removeIntegration = (name: string) => setWf({ integrations: wf.integrations.filter((x) => x !== name) });
+  const setDoc = (patch: Partial<SkillFile>) => {
+    if (!doc) return;
+    upd({ files: [{ ...doc, ...patch }] });
+  };
   const keys = useMemo(() => parsePlaceholders(d.body), [d.body]);
   const isOwner = owner.id === me.id;
   const hasUrl = d.links.some((l) => l.url.trim());
   const textBytes = d.files.reduce((n, f) => n + (isBinaryFile(f) ? 0 : fileBytes(f)), 0);
   const totalBytes = d.files.reduce((n, f) => n + fileBytes(f), 0);
   const overLimit = isSkill && (totalBytes > MAX_SKILL_BYTES || textBytes > MAX_SKILL_TEXT_BYTES);
+  const needsAdaptedFor = isWf && mode === "fork" && !d.forkNote.trim();
   const valid =
     d.title.trim().length > 0 &&
-    (isSkill ? d.files.length > 0 || hasUrl : d.body.trim().length > 0) &&
+    (isSkill
+      ? d.files.length > 0 || hasUrl
+      : isWf
+        ? !!docContent.trim() && !docTooBig && !needsAdaptedFor
+        : d.body.trim().length > 0) &&
     d.apps.length > 0 &&
     d.audiences.length > 0 &&
     !overLimit &&
@@ -135,7 +205,13 @@ export function PromptEditor({
           ? "Pick at least one team."
           : isSkill
             ? "Add a title and at least one file or link."
-            : "Add a title and a prompt to continue.";
+            : isWf
+              ? docTooBig
+                ? `The .md is ${formatBytes(docBytes)}; the limit is ${formatBytes(MAX_WORKFLOW_DOC_BYTES)}.`
+                : needsAdaptedFor
+                  ? "Say what this adaptation is for."
+                  : "Add a title and the workflow's .md."
+              : "Add a title and a prompt to continue.";
   const readyHint = "Everything needed is filled in.";
 
   const peopleByEmail = useMemo(() => {
@@ -199,12 +275,38 @@ export function PromptEditor({
   const onUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const list = Array.from(e.target.files ?? []);
     e.target.value = "";
-    void ingestFiles(list);
+    void (isWf ? ingestWorkflowFile(list) : ingestFiles(list));
   };
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
-    void ingestFiles(Array.from(e.dataTransfer?.files ?? []));
+    const list = Array.from(e.dataTransfer?.files ?? []);
+    void (isWf ? ingestWorkflowFile(list) : ingestFiles(list));
+  };
+
+  /** A workflow's .md, read without changing a byte (BOM and line endings kept). */
+  const ingestWorkflowFile = async (list: File[]) => {
+    const f = list[0];
+    if (!f) return;
+    if (!isMarkdownName(f.name)) return show("Choose a .md file.");
+    if (f.size > MAX_WORKFLOW_DOC_BYTES) {
+      return show(`That file is ${formatBytes(f.size)}; the limit is ${formatBytes(MAX_WORKFLOW_DOC_BYTES)}.`);
+    }
+    const content = decodeExact(new Uint8Array(await f.arrayBuffer()));
+    if (content === null) return show("That file isn't UTF-8 text, so it can't be kept exactly. Save it as UTF-8 and try again.");
+    if (!content.trim()) return show("That file is empty.");
+    if (route === "") setRoute("upload");
+    const facts = docFacts(content);
+    setD((cur) => ({
+      ...cur,
+      files: [{ name: f.name, content }],
+      title: cur.title.trim() ? cur.title : (facts.title ?? cur.title),
+      description: cur.description.trim() ? cur.description : (facts.description ?? cur.description),
+    }));
+    const trigger = wf.trigger ? "" : suggestTrigger(content);
+    const integrations = suggestIntegrations(content).filter((i) => !wf.integrations.some((x) => x.toLowerCase() === i.toLowerCase()));
+    setSuggest(trigger || integrations.length ? { trigger, integrations } : null);
+    show(`Added ${f.name}`);
   };
   const ingestFiles = async (list: File[]) => {
     if (!list.length || uploading) return;
@@ -353,13 +455,13 @@ export function PromptEditor({
     const links = r === "link" ? d.links : d.links.filter((l) => l.url.trim() || l.label.trim());
     const patch: Partial<PromptDraft> = links.length !== d.links.length ? { links } : {};
     if (r === "write" && !d.files.length) {
-      patch.files = [{ name: "SKILL.md", content: SKILL_TEMPLATE }];
+      patch.files = isWf ? [{ name: docFileName(d.title), content: WORKFLOW_TEMPLATE }] : [{ name: "SKILL.md", content: SKILL_TEMPLATE }];
       setFileIdx(0);
     }
     if (r === "link" && !d.links.length) patch.links = [{ label: "", url: "" }];
     if (Object.keys(patch).length) upd(patch);
   };
-  const needsRoute = isSkill && route === "";
+  const needsRoute = (isSkill || isWf) && route === "";
   const showRouteSwitch = isSkill && route !== "" && route !== "existing";
   const showFiles = isSkill && (route !== "link" || d.files.length > 0);
   // Links are optional on both kinds: where a skill lives, or where a prompt is saved
@@ -384,6 +486,14 @@ export function PromptEditor({
   const audSummary = d.audiences.length ? d.audiences.join(", ") : "Pick at least one team";
   const visSummary = d.visibility === "public" ? "Everyone at Clay" : "Only you and your editors";
   const teamSummary = d.editors.length ? `You and ${d.editors.length} other${d.editors.length === 1 ? "" : "s"}` : "Just you";
+  const triggerSummary = wf.trigger ? TRIGGER_LABELS[wf.trigger] : "Not set";
+  const integSummary = wf.integrations.length ? wf.integrations.join(", ") : "None yet";
+  const stageSummary = wf.stage ? STAGE_LABELS[wf.stage] : "Draft";
+  const readySummary = wf.customerReady
+    ? "Ready to send to customers"
+    : findings.length
+      ? `${findings.length} thing${findings.length === 1 ? "" : "s"} to check`
+      : "Not confirmed yet";
   const toggleSec = (id: Section) => setOpenSec((cur) => (cur === id ? "" : id));
 
   // ── Save / delete ─────────────────────────────────────────────────
@@ -400,26 +510,51 @@ export function PromptEditor({
           setError(res.error);
           return;
         }
-        const toast = mode === "edit" ? "saved" : mode === "fork" ? "forked" : isSkill ? "published-skill" : "published";
+        const toast =
+          mode === "edit"
+            ? "saved"
+            : mode === "fork"
+              ? isWf
+                ? "adapted"
+                : "forked"
+              : isSkill
+                ? "published-skill"
+                : isWf
+                  ? "published-workflow"
+                  : "published";
         router.push(`/prompts/${res.data.id}?toast=${toast}`);
       } catch {
         // A thrown action (network, payload too large) shouldn't take down the page.
         setError(
-          isSkill
-            ? "Couldn't save. The skill may be too large to send; remove some files and try again."
+          isSkill || isWf
+            ? `Couldn't save. The ${noun} may be too large to send; trim it and try again.`
             : "Couldn't save. Check your connection and try again.",
         );
       }
     });
   };
 
-  const heading = mode === "create" ? `New ${noun}` : mode === "edit" ? `Edit ${noun}` : `Fork ${noun}`;
-  const saveLabel = mode === "edit" ? "Save changes" : mode === "fork" ? "Create fork" : `Publish ${noun}`;
+  const heading =
+    mode === "create" ? `New ${noun}` : mode === "edit" ? `Edit ${noun}` : isWf ? "Adapt workflow" : `Fork ${noun}`;
+  const saveLabel =
+    mode === "edit" ? "Save changes" : mode === "fork" ? (isWf ? "Create adaptation" : "Create fork") : `Publish ${noun}`;
   const subhead = isSkill
     ? "Three things are needed: a name, the skill itself, and where it works."
-    : "Three things are needed: a name, the prompt, and where it works.";
-  const titleExample = isSkill ? "e.g. Clay formulas" : "e.g. Account research brief";
-  const descExample = isSkill ? "e.g. Teaches the model Clay's formula syntax" : "e.g. A one-page brief on any account before a first call";
+    : isWf
+      ? mode === "fork"
+        ? "Say what this version is adapted for, then change the .md as needed."
+        : "Two things are needed: a name and the architecture .md. It's kept exactly as uploaded."
+      : "Three things are needed: a name, the prompt, and where it works.";
+  const titleExample = isSkill
+    ? "e.g. Clay formulas"
+    : isWf
+      ? "e.g. Inbound lead routing — reference architecture"
+      : "e.g. Account research brief";
+  const descExample = isSkill
+    ? "e.g. Teaches the model Clay's formula syntax"
+    : isWf
+      ? "e.g. Validate, enrich, dedupe and route every inbound form fill"
+      : "e.g. A one-page brief on any account before a first call";
   const Req = () => (
     <span className={`${styles.req} tone`} style={toneStyle(REQUIRED_TONE)}>
       Required
@@ -536,7 +671,11 @@ export function PromptEditor({
           <span className="eyebrow">Links</span>
           {linksRequired ? <Req /> : null}
           <span className={styles.example}>
-            {isSkill ? "Where it lives: a Claude project, a custom GPT, a Town agent" : "Where it's saved: a Granola recipe, a Claude project, a custom GPT"}
+            {isSkill
+              ? "Where it lives: a Claude project, a custom GPT, a Town agent"
+              : isWf
+                ? "The live Clay workflow, a walkthrough video, a related doc"
+                : "Where it's saved: a Granola recipe, a Claude project, a custom GPT"}
           </span>
         </div>
         <span className="tiny muted">{d.links.length ? `${d.links.length} link${d.links.length === 1 ? "" : "s"}` : "Optional"}</span>
@@ -548,14 +687,14 @@ export function PromptEditor({
               className={`input ${skillStyles.linkLabelInput}`}
               value={l.label}
               onChange={(e) => setLink(i, { label: e.target.value })}
-              placeholder={isSkill ? "Label, e.g. Claude project" : "Label, e.g. Granola recipe"}
+              placeholder={isSkill ? "Label, e.g. Claude project" : isWf ? "Label, e.g. Open in Clay" : "Label, e.g. Granola recipe"}
               aria-label="Link label"
             />
             <input
               className={`input ${skillStyles.linkUrlInput}`}
               value={l.url}
               onChange={(e) => setLink(i, { url: e.target.value })}
-              placeholder={isSkill ? "https://claude.ai/project/..." : "https://notes.granola.ai/..."}
+              placeholder={isSkill ? "https://claude.ai/project/..." : isWf ? "https://app.clay.com/..." : "https://notes.granola.ai/..."}
               inputMode="url"
               aria-label="Link URL"
             />
@@ -571,6 +710,127 @@ export function PromptEditor({
       </div>
     </div>
   );
+
+  const docBlock = (
+    <div className="field">
+      <div className={styles.bodyHead}>
+        <div className={styles.labelRow}>
+          <span className="eyebrow">Architecture .md</span>
+          <Req />
+          <span className={styles.example}>Stored and downloaded exactly as uploaded</span>
+        </div>
+        <span className={`tiny ${docTooBig ? styles.error : "muted"}`}>
+          {doc ? `${formatBytes(docBytes)} of ${formatBytes(MAX_WORKFLOW_DOC_BYTES)}` : "One .md file"}
+        </span>
+      </div>
+      <div
+        className={skillStyles.editorFiles}
+        data-dragging={dragging ? "" : undefined}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!dragging) setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={onDrop}
+      >
+        {doc ? (
+          <>
+            <div className={skillStyles.editorFileMeta}>
+              <span className="eyebrow" style={{ whiteSpace: "nowrap" }}>
+                File name
+              </span>
+              <input
+                className={skillStyles.fileNameInput}
+                value={doc.name}
+                onChange={(e) => setDoc({ name: e.target.value })}
+                aria-label="File name"
+              />
+              <label className={skillStyles.uploadLabel}>
+                <UploadSimple weight="bold" size={13} />
+                Replace
+                <input type="file" accept=".md,.markdown,text/markdown" onChange={onUpload} style={{ display: "none" }} />
+              </label>
+            </div>
+            <textarea
+              className={skillStyles.fileEditor}
+              rows={18}
+              spellCheck={false}
+              value={doc.content}
+              onChange={(e) => setDoc({ content: e.target.value })}
+              aria-label={`Contents of ${doc.name}`}
+            />
+          </>
+        ) : (
+          <label className={styles.dropzone}>
+            <UploadSimple size={26} className="muted" />
+            <span className={styles.dropTitle}>Drop your architecture .md here, or click to browse</span>
+            <span className={styles.dropSub}>
+              The title and description fill in from the file. It&apos;s stored byte for byte, so the download matches what you
+              uploaded. Up to {formatBytes(MAX_WORKFLOW_DOC_BYTES)}.
+            </span>
+            <input type="file" accept=".md,.markdown,text/markdown" onChange={onUpload} style={{ display: "none" }} />
+          </label>
+        )}
+      </div>
+      {doc ? (
+        <span className="tiny muted">Editing the text here changes the file people download. Each save keeps the previous version.</span>
+      ) : null}
+    </div>
+  );
+
+  const suggestBlock =
+    isWf && suggest && suggestLeft ? (
+      <div className={styles.suggest}>
+        <span className="small" style={{ fontWeight: 600 }}>
+          We spotted these in your file. Add them?
+        </span>
+        <div className="row gap-2 wrap">
+          {suggest.trigger ? (
+            <button
+              type="button"
+              className={styles.routeChip}
+              onClick={() => {
+                setWf({ trigger: suggest.trigger });
+                setSuggest({ ...suggest, trigger: "" });
+              }}
+            >
+              <Plus weight="bold" size={12} />
+              Trigger: {TRIGGER_LABELS[suggest.trigger]}
+            </button>
+          ) : null}
+          {suggest.integrations.map((i) => (
+            <button
+              key={i}
+              type="button"
+              className={styles.routeChip}
+              onClick={() => {
+                addIntegration(i);
+                setSuggest({ ...suggest, integrations: suggest.integrations.filter((x) => x !== i) });
+              }}
+            >
+              <Plus weight="bold" size={12} />
+              {i}
+            </button>
+          ))}
+        </div>
+        <div className="row gap-2">
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={() => {
+              if (suggest.trigger) setWf({ trigger: suggest.trigger });
+              suggest.integrations.forEach(addIntegration);
+              setSuggest(null);
+            }}
+          >
+            Add all
+          </button>
+          <button type="button" className="btn btn-outline btn-sm" onClick={() => setSuggest(null)}>
+            Dismiss
+          </button>
+        </div>
+      </div>
+    ) : null;
 
   const appNames = [
     ...activeApps(catalog).map((a) => a.name),
@@ -621,28 +881,50 @@ export function PromptEditor({
           <div className={styles.forkLine}>
             <GitFork weight="bold" size={14} />
             <span>
-              Forking <span className={styles.forkParent}>{parentTitle}</span>. Your version stays linked to the original.
+              {isWf ? "Adapting" : "Forking"} <span className={styles.forkParent}>{parentTitle}</span>. Your version stays linked to the
+              original{isWf ? ", and both stay in the library" : ""}.
             </span>
           </div>
         ) : null}
       </div>
 
       {needsRoute ? (
-        <div className={styles.routeGrid} role="group" aria-label="How does this skill arrive?">
+        <div className={styles.routeGrid} role="group" aria-label={`How does this ${noun} arrive?`}>
           {(
-            [
-              ["upload", "Upload a .skill file", "It unpacks into files and fills in the name and description.", "/icons/Templates.png"],
-              ["write", "Write it here", "Start from the SKILL.md template and edit in place.", "/icons/Pencil.png"],
-              ["link", "Just link it", "It already lives in a Claude project, a custom GPT, or a Town agent.", "/icons/Search.png"],
-            ] as [Route, string, string, string][]
-          ).map(([key, label, sub, icon]) => (
+            (isWf
+              ? [
+                  ["upload", "Upload a .md", "Most people start here. The title and description fill in, and the file is kept byte for byte.", "/icons/Templates.png"],
+                  ["write", "Write or paste it here", "Start from the reference-architecture template, or paste Markdown over it.", "/icons/Pencil.png"],
+                ]
+              : [
+                  ["upload", "Upload a .skill file", "It unpacks into files and fills in the name and description.", "/icons/Templates.png"],
+                  ["write", "Write it here", "Start from the SKILL.md template and edit in place.", "/icons/Pencil.png"],
+                  ["link", "Just link it", "It already lives in a Claude project, a custom GPT, or a Town agent.", "/icons/Search.png"],
+                ]) as [Route, string, string, string][]
+          ).map(([key, label, sub, icon]) =>
+            isWf && key === "upload" ? (
+              <label
+                key={key}
+                className={styles.routeCard}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={onDrop}
+                style={{ cursor: "pointer" }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={icon} alt="" className={styles.routeIcon} />
+                <span className={styles.routeLabel}>{label}</span>
+                <span className={styles.routeSub}>{sub}</span>
+                <input type="file" accept=".md,.markdown,text/markdown" onChange={onUpload} style={{ display: "none" }} />
+              </label>
+            ) : (
             <button key={key} type="button" className={styles.routeCard} onClick={() => pickRoute(key)}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={icon} alt="" className={styles.routeIcon} />
               <span className={styles.routeLabel}>{label}</span>
               <span className={styles.routeSub}>{sub}</span>
             </button>
-          ))}
+            ),
+          )}
         </div>
       ) : (
         <form
@@ -703,21 +985,29 @@ export function PromptEditor({
           {mode === "fork" ? (
             <label className="field">
               <div className={styles.labelRow}>
-                <span className="eyebrow">What did you change</span>
-                <span className={styles.example}>e.g. Added a competitor section, cut it to 5 bullets</span>
+                <span className="eyebrow">{isWf ? "Adapted for" : "What did you change"}</span>
+                {isWf ? <Req /> : null}
+                <span className={styles.example}>
+                  {isWf
+                    ? "e.g. Acme: HubSpot instead of Salesforce, or EMEA territories only"
+                    : "e.g. Added a competitor section, cut it to 5 bullets"}
+                </span>
               </div>
               <input
                 className="input"
                 style={{ padding: "11px 14px" }}
                 value={d.forkNote}
                 onChange={(e) => upd({ forkNote: e.target.value })}
-                placeholder="What did you change"
+                placeholder={isWf ? "Who or what this version is for" : "What did you change"}
                 maxLength={600}
+                required={isWf}
               />
             </label>
           ) : null}
 
           {showFiles ? filesBlock : null}
+          {isWf ? docBlock : null}
+          {suggestBlock}
           {isSkill && showLinks ? linksBlock : null}
           {isSkill && showAddOther ? (
             <button type="button" className={styles.addOther} onClick={addOther}>
@@ -726,7 +1016,7 @@ export function PromptEditor({
             </button>
           ) : null}
 
-          {!isSkill ? (
+          {isPrompt ? (
             <div className="field">
               <div className={styles.bodyHead}>
                 <div className={styles.labelRow}>
@@ -763,7 +1053,7 @@ export function PromptEditor({
           {!isSkill && showAddOther ? (
             <button type="button" className={styles.addOther} onClick={addOther}>
               <Plus weight="bold" size={13} />
-              Add a link to where it's saved (a Granola recipe, a Claude project)
+              {isWf ? "Add a link (e.g. the live Clay workflow)" : "Add a link to where it's saved (a Granola recipe, a Claude project)"}
             </button>
           ) : null}
 
@@ -887,6 +1177,142 @@ export function PromptEditor({
                 })}
               </div>,
             )}
+
+            {isWf ? (
+              <>
+                {section(
+                  "trigger",
+                  "Trigger",
+                  "What starts a run",
+                  triggerSummary,
+                  true,
+                  false,
+                  <div className={styles.surfacePills} role="group" aria-label="Trigger">
+                    {WORKFLOW_TRIGGERS.map((t) => (
+                      <button key={t} type="button" className={styles.surfacePill} aria-pressed={wf.trigger === t} onClick={() => setWf({ trigger: wf.trigger === t ? "" : t })}>
+                        {TRIGGER_LABELS[t]}
+                      </button>
+                    ))}
+                  </div>,
+                )}
+                {section(
+                  "integ",
+                  "Integrations",
+                  "Tools it reads from or writes to",
+                  integSummary,
+                  true,
+                  false,
+                  <div className="stack" style={{ gap: 12 }}>
+                    {wf.integrations.length ? (
+                      <div className="row gap-2 wrap">
+                        {wf.integrations.map((i) => (
+                          <button key={i} type="button" className={styles.routeChip} aria-pressed onClick={() => removeIntegration(i)} aria-label={`Remove ${i}`}>
+                            {i}
+                            <X weight="bold" size={11} />
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="row gap-2 wrap">
+                      {SUGGESTED_INTEGRATIONS.filter((n) => !wf.integrations.some((x) => x.toLowerCase() === n.toLowerCase())).map((n) => (
+                        <button key={n} type="button" className={styles.routeChip} onClick={() => addIntegration(n)}>
+                          <Plus weight="bold" size={11} />
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                    <div className={styles.inviteRow}>
+                      <input
+                        className={styles.inviteInput}
+                        value={intInput}
+                        onChange={(e) => setIntInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            addIntegration(intInput);
+                            setIntInput("");
+                          }
+                        }}
+                        placeholder="Another integration"
+                        aria-label="Add an integration"
+                        maxLength={40}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={() => {
+                          addIntegration(intInput);
+                          setIntInput("");
+                        }}
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>,
+                )}
+                {section(
+                  "stage",
+                  "Stage",
+                  "How far along it is",
+                  stageSummary,
+                  true,
+                  false,
+                  <div className={styles.surfacePills} role="group" aria-label="Stage">
+                    {WORKFLOW_STAGES.map((st) => (
+                      <button key={st} type="button" className={styles.surfacePill} aria-pressed={(wf.stage || "draft") === st} onClick={() => setWf({ stage: st })}>
+                        {STAGE_LABELS[st]}
+                      </button>
+                    ))}
+                  </div>,
+                )}
+                {section(
+                  "ready",
+                  "Customer-ready",
+                  "Safe to send to a customer as is",
+                  readySummary,
+                  wf.customerReady || !findings.length,
+                  false,
+                  <div className="stack" style={{ gap: 12 }}>
+                    {findings.length ? (
+                      <>
+                        <span className="small muted">
+                          We scanned the .md for things that shouldn&apos;t leave Clay. These are warnings: you decide.
+                        </span>
+                        <div className={styles.findings}>
+                          {findings.slice(0, 8).map((f, i) => (
+                            <div key={i} className={styles.finding}>
+                              <Warning weight="bold" size={15} className={styles.findingIcon} />
+                              <div className="stack" style={{ gap: 2, minWidth: 0 }}>
+                                <span className="small">
+                                  <strong>Line {f.line}</strong> · {f.message}
+                                </span>
+                                <code className={`${styles.code} truncate`}>{f.excerpt}</code>
+                              </div>
+                            </div>
+                          ))}
+                          {findings.length > 8 ? <span className="tiny muted">…and {findings.length - 8} more.</span> : null}
+                        </div>
+                      </>
+                    ) : (
+                      <div className={styles.finding}>
+                        <CheckCircle weight="bold" size={15} className={styles.okIcon} />
+                        <span className="small">No internal emails, record IDs, hostnames, Slack IDs or credentials found.</span>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className={styles.checkRow}
+                      role="checkbox"
+                      aria-checked={wf.customerReady}
+                      onClick={() => setWf({ customerReady: !wf.customerReady })}
+                    >
+                      {wf.customerReady ? <CheckSquare weight="fill" size={18} /> : <Square size={18} className="muted" />}
+                      <span className="grow">I&apos;ve checked this is safe to send to customers.</span>
+                    </button>
+                  </div>,
+                )}
+              </>
+            ) : null}
 
             {section(
               "vis",

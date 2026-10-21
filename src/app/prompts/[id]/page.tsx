@@ -1,4 +1,4 @@
-import { ArrowLeft, GitFork, PencilSimple } from "@phosphor-icons/react/dist/ssr";
+import { ArrowLeft, CheckCircle, GitFork, PencilSimple, Warning } from "@phosphor-icons/react/dist/ssr";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -7,15 +7,31 @@ import { Avatar } from "@/components/Avatar";
 import { DeleteButton } from "@/components/DeleteButton";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { FeedbackSection } from "@/components/FeedbackSection";
+import { MarkdownDoc } from "@/components/MarkdownDoc";
+import { WorkflowDoc } from "@/components/WorkflowDoc";
 import { Header } from "@/components/Header";
 import { PromptBody } from "@/components/PromptBody";
 import { PromptNotes } from "@/components/PromptNotes";
 import { SkillFiles } from "@/components/SkillFiles";
 import { SkillInstall } from "@/components/SkillInstall";
 import { SkillLinks } from "@/components/SkillLinks";
-import { AppTag, AudienceTag, PrivateTag, SkillTag, appLabel } from "@/components/Tag";
+import {
+  AppTag,
+  AudienceTag,
+  OriginTag,
+  PrivateTag,
+  ReadyTag,
+  SkillTag,
+  StageTag,
+  TriggerTag,
+  WorkflowTag,
+  appLabel,
+} from "@/components/Tag";
 import { appTone, REQUIRED_TONE, toneStyle } from "@/lib/catalog";
-import { skillSlug } from "@/lib/skills";
+import { STAGE_LABELS, TRIGGER_LABELS } from "@/lib/constants";
+import { tableOfContents } from "@/lib/markdown";
+import { fileBytes, skillSlug } from "@/lib/skills";
+import { scanForInternal, workflowDoc } from "@/lib/workflows";
 import { shouldNudgeToSlack } from "@/lib/slackNudge";
 import { ToastFromQuery } from "@/components/Toast";
 import { VariantsTree } from "@/components/VariantsTree";
@@ -60,6 +76,11 @@ export default async function PromptPage({ params }: { params: Params }) {
   ]);
   const parent = prompt.parentId ? nodes.find((n) => n.id === prompt.parentId) ?? null : null;
   const lastEditor = resolveLastEditor(prompt, nodes, user);
+  const isWf = prompt.kind === "workflow";
+  const doc = isWf ? workflowDoc(prompt.files) : undefined;
+  const toc = doc ? tableOfContents(doc.content) : [];
+  // The customer-ready check is for the people who can fix the doc.
+  const findings = doc && editable ? scanForInternal(doc.content) : [];
 
   const nudge = await shouldNudgeToSlack(user);
   return (
@@ -70,7 +91,7 @@ export default async function PromptPage({ params }: { params: Params }) {
       </Suspense>
 
       <section className={styles.section}>
-        <Link href={prompt.kind === "skill" ? "/?kind=skills" : "/?kind=prompts"} className="back-link">
+        <Link href={`/?kind=${prompt.kind}s`} className="back-link">
           <ArrowLeft weight="bold" size={13} />
           Back
         </Link>
@@ -79,6 +100,15 @@ export default async function PromptPage({ params }: { params: Params }) {
           <div className={styles.headMain}>
             <div className={styles.tags}>
               {prompt.kind === "skill" ? <SkillTag /> : null}
+              {isWf ? (
+                <>
+                  <WorkflowTag />
+                  <OriginTag adapted={!!prompt.parentId} />
+                  <TriggerTag trigger={prompt.workflow.trigger} />
+                  <StageTag stage={prompt.workflow.stage} />
+                  <ReadyTag ready={prompt.workflow.customerReady} showNotReady={editable} />
+                </>
+              ) : null}
               {prompt.apps.map((a) => (
                 <AppTag key={a.app} app={a} tone={appTone(catalog, a.app)} />
               ))}
@@ -93,12 +123,22 @@ export default async function PromptPage({ params }: { params: Params }) {
               <div className={styles.forkNote}>
                 <div className={styles.forkNoteHead}>
                   <GitFork weight="bold" size={14} />
-                  Forked from{" "}
+                  {isWf ? "Adapted from" : "Forked from"}{" "}
                   <Link href={`/prompts/${parent.id}`} className={styles.forkParent}>
                     {parent.title}
                   </Link>
                 </div>
-                {prompt.forkNote ? <div className={styles.forkNoteBody}>{prompt.forkNote}</div> : null}
+                {prompt.forkNote ? (
+                  <div className={styles.forkNoteBody}>
+                    {isWf ? (
+                      <>
+                        Adapted for <strong>{prompt.forkNote}</strong>
+                      </>
+                    ) : (
+                      prompt.forkNote
+                    )}
+                  </div>
+                ) : null}
               </div>
             ) : null}
             <div className={styles.byline}>
@@ -121,7 +161,7 @@ export default async function PromptPage({ params }: { params: Params }) {
             <FavoriteButton promptId={prompt.id} favorited={prompt.favoritedBy.includes(user.id)} variant="pill" />
             <Link href={`/prompts/${prompt.id}/fork`} className="btn btn-outline">
               <GitFork weight="bold" size={15} />
-              Fork
+              {isWf ? "Adapt" : "Fork"}
             </Link>
             {editable ? (
               <Link href={`/prompts/${prompt.id}/edit`} className="btn btn-outline">
@@ -137,7 +177,21 @@ export default async function PromptPage({ params }: { params: Params }) {
 
         <div className={styles.columns}>
           <div className={styles.main}>
-            {prompt.kind === "skill" ? (
+            {isWf ? (
+              <>
+                {doc ? (
+                  <WorkflowDoc
+                    name={doc.name}
+                    bytes={fileBytes(doc)}
+                    source={doc.content}
+                    downloadHref={`/prompts/${prompt.id}/download`}
+                  >
+                    <MarkdownDoc md={doc.content} />
+                  </WorkflowDoc>
+                ) : null}
+                <SkillLinks links={prompt.links} kind="workflow" />
+              </>
+            ) : prompt.kind === "skill" ? (
               <>
                 <SkillLinks links={prompt.links} />
                 <SkillFiles files={prompt.files} slug={skillSlug(prompt.title, prompt.files)} />
@@ -153,6 +207,69 @@ export default async function PromptPage({ params }: { params: Params }) {
           </div>
 
           <aside className={styles.side}>
+            {isWf && toc.length ? (
+              <nav className="slab" style={{ gap: 10 }} aria-label="Contents">
+                <div className="section-title">Contents</div>
+                <div className={styles.toc}>
+                  {toc.map((h, i) => (
+                    <a key={`${h.id}-${i}`} href={`#${h.id}`} data-depth={h.depth}>
+                      {h.text}
+                    </a>
+                  ))}
+                </div>
+              </nav>
+            ) : null}
+            {isWf ? (
+              <div className="slab" style={{ gap: 12 }}>
+                <div className="section-title">Workflow</div>
+                <div className={styles.facts}>
+                  <span className="muted">Trigger</span>
+                  <span>{prompt.workflow.trigger ? TRIGGER_LABELS[prompt.workflow.trigger] : "Not set"}</span>
+                  <span className="muted">Stage</span>
+                  <span>{prompt.workflow.stage ? STAGE_LABELS[prompt.workflow.stage] : "Draft"}</span>
+                  <span className="muted">Customer-ready</span>
+                  <span>{prompt.workflow.customerReady ? "Yes" : "Not yet"}</span>
+                </div>
+                {prompt.workflow.integrations.length ? (
+                  <div className={styles.tags}>
+                    {prompt.workflow.integrations.map((i) => (
+                      <span key={i} className="tag tag-light">
+                        {i}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {isWf && editable && doc ? (
+              <div className="slab" style={{ gap: 10 }}>
+                <div className="section-title">Before you send it</div>
+                {findings.length ? (
+                  <>
+                    <div className="small muted">
+                      {findings.length} thing{findings.length === 1 ? "" : "s"} in the .md that may not belong outside Clay.
+                      Only you and your editors see this.
+                    </div>
+                    <div className={styles.findings}>
+                      {findings.slice(0, 10).map((f, i) => (
+                        <a key={i} href={`#L${f.line}`} className={styles.finding}>
+                          <Warning weight="bold" size={14} className={styles.findingIcon} />
+                          <span>
+                            <strong>Line {f.line}</strong> · {f.message}
+                          </span>
+                        </a>
+                      ))}
+                      {findings.length > 10 ? <span className="tiny muted">…and {findings.length - 10} more.</span> : null}
+                    </div>
+                  </>
+                ) : (
+                  <div className={styles.finding}>
+                    <CheckCircle weight="bold" size={14} className={styles.okIcon} />
+                    <span className="small">No internal emails, record IDs, hostnames, Slack IDs or credentials found.</span>
+                  </div>
+                )}
+              </div>
+            ) : null}
             {prompt.apps.some((a) => a.model) ? (
               <div className="slab" style={{ gap: 14 }}>
                 <div className="section-title">Model</div>
@@ -177,7 +294,13 @@ export default async function PromptPage({ params }: { params: Params }) {
                 </div>
               </div>
             ) : null}
-            <VariantsTree nodes={nodes} currentId={prompt.id} noun={prompt.kind} />
+            <VariantsTree
+              nodes={nodes}
+              currentId={prompt.id}
+              noun={prompt.kind}
+              title={isWf ? "Adaptations" : "Variants"}
+              forkNoun={isWf ? "adaptation" : "fork"}
+            />
 
             <div className="slab" style={{ gap: 12 }}>
               <div className="eyebrow">Who can edit</div>
@@ -194,6 +317,7 @@ export default async function PromptPage({ params }: { params: Params }) {
                 versions={versions}
                 currentLabel={`Version ${versions.length + 1} · current`}
                 currentSub={`${lastEditor.name} · ${ago(prompt.updatedAt)}`}
+                downloadHref={isWf ? `/prompts/${prompt.id}/download` : undefined}
               />
             ) : null}
           </aside>

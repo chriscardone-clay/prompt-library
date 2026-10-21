@@ -116,6 +116,10 @@ html[data-embedded] .navLink {
   .brandLabel {
     display: none;
   }
+  /* Phones: New workflow lives on the Workflows tab instead (PromptList). */
+  .newWorkflow {
+    display: none;
+  }
   .nav {
     margin-left: 0;
     order: 3;

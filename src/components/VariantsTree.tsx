@@ -9,6 +9,9 @@ interface Props {
   currentId: string;
   /** "prompt" or "skill", for the empty-state copy. */
   noun?: string;
+  /** Workflows call their forks adaptations. */
+  title?: string;
+  forkNoun?: string;
 }
 
 interface TreeRow {
@@ -41,15 +44,15 @@ function buildTree(nodes: PromptNode[], currentId: string): TreeRow[] {
   return rows;
 }
 
-export function VariantsTree({ nodes, currentId, noun = "prompt" }: Props) {
+export function VariantsTree({ nodes, currentId, noun = "prompt", title = "Variants", forkNoun = "fork" }: Props) {
   const rows = buildTree(nodes, currentId);
   const forks = Math.max(rows.length - 1, 0);
 
   return (
     <div className="slab" style={{ gap: 16 }}>
       <div className={styles.head}>
-        <div className="section-title">Variants</div>
-        <div className="tiny muted">{forks ? plural(forks, "fork") : "original"}</div>
+        <div className="section-title">{title}</div>
+        <div className="tiny muted">{forks ? plural(forks, forkNoun) : "original"}</div>
       </div>
       {forks ? (
         <div className={styles.list}>
@@ -58,7 +61,7 @@ export function VariantsTree({ nodes, currentId, noun = "prompt" }: Props) {
             const sub = isCurrent
               ? `${node.owner.name} · this version`
               : node.forkNote
-                ? `${node.owner.name} · ${node.forkNote}`
+                ? `${node.owner.name} · ${forkNoun === "adaptation" ? "for " : ""}${node.forkNote}`
                 : `${node.owner.name} · original`;
             return (
               <div
@@ -92,7 +95,9 @@ export function VariantsTree({ nodes, currentId, noun = "prompt" }: Props) {
         </div>
       ) : (
         <div className="muted" style={{ fontSize: 14 }}>
-          No forks yet. Fork this {noun} to make your own version. It stays linked here.
+          {forkNoun === "adaptation"
+            ? "No adaptations yet. Adapt this workflow for a customer or segment. It stays linked here, and both stay in the library."
+            : `No forks yet. Fork this ${noun} to make your own version. It stays linked here.`}
         </div>
       )}
     </div>

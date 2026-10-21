@@ -4,6 +4,7 @@ import { Header } from "@/components/Header";
 import { PromptEditor } from "@/components/PromptEditor";
 import { getCatalog, getCurrentUser, getPrompt } from "@/lib/data";
 import { personFromProfile } from "@/lib/people";
+import { packDocFiles } from "@/lib/workflows";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Fork" };
@@ -30,8 +31,10 @@ export default async function ForkPromptPage({ params }: { params: Promise<{ id:
           description: parent.description,
           body: parent.body,
           notes: parent.notes,
-          files: parent.files.map((f) => ({ ...f })),
+          files: parent.kind === "workflow" ? packDocFiles(parent.files) : parent.files.map((f) => ({ ...f })),
           links: parent.links.map((l) => ({ ...l })),
+          // An adaptation starts as a draft and must be re-checked before it goes to a customer.
+          workflow: { ...parent.workflow, stage: "draft", customerReady: false },
           apps: parent.apps,
           audiences: parent.audiences,
           visibility: "public",
