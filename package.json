@@ -11,7 +11,8 @@
     "db:start": "supabase start",
     "db:reset": "supabase db reset",
     "db:push": "supabase db push",
-    "db:types": "supabase gen types typescript --local > src/lib/database.types.ts"
+    "db:types": "supabase gen types typescript --local > src/lib/database.types.ts",
+    "check:contrast": "node scripts/check-contrast.mjs"
   },
   "dependencies": {
     "@flags-sdk/vercel": "^1.5.2",
@@ -38,6 +39,7 @@
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "playwright-core": "^1.56.1",
     "supabase": "^2.0.0",
     "typescript": "^5.9.0"
   },
