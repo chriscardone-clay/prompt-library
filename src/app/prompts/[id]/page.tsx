@@ -21,7 +21,6 @@ import {
   ApprovalTag,
   AppTag,
   AudienceTag,
-  IntegrationTag,
   OriginTag,
   PrivateTag,
   ReadyTag,
@@ -31,7 +30,7 @@ import {
   WorkflowTag,
   appLabel,
 } from "@/components/Tag";
-import { appTone, catalogIntegration, REQUIRED_TONE, toneStyle } from "@/lib/catalog";
+import { appTone, REQUIRED_TONE, toneStyle } from "@/lib/catalog";
 import { STAGE_LABELS, TRIGGER_LABELS } from "@/lib/constants";
 import { tableOfContents } from "@/lib/markdown";
 import { listShares } from "@/lib/shares";
@@ -270,14 +269,13 @@ export default async function PromptPage({ params }: { params: Params }) {
                   <span>{prompt.workflow.stage ? STAGE_LABELS[prompt.workflow.stage] : "Draft"}</span>
                   <span className="muted">Customer-ready</span>
                   <span>{prompt.workflow.customerReady ? "Yes" : "Not yet"}</span>
+                  {prompt.workflow.integrations.length ? (
+                    <>
+                      <span className="muted">Integrations</span>
+                      <span>{prompt.workflow.integrations.join(", ")}</span>
+                    </>
+                  ) : null}
                 </div>
-                {prompt.workflow.integrations.length ? (
-                  <div className={styles.tags}>
-                    {prompt.workflow.integrations.map((i) => (
-                      <IntegrationTag key={i} name={i} color={catalogIntegration(catalog, i)?.color} />
-                    ))}
-                  </div>
-                ) : null}
               </div>
             ) : null}
             {canShare && doc ? (

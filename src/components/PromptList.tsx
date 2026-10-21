@@ -9,7 +9,6 @@ import {
   activeTeams,
   toneStyle,
   appTone,
-  catalogIntegration,
   isKnownApp,
   REQUIRED_TONE,
   isKnownTeam,
@@ -23,7 +22,7 @@ import { searchPrompts } from "@/lib/search";
 import type { Profile, Prompt } from "@/lib/types";
 import { Avatar } from "./Avatar";
 import { FavoriteButton } from "./FavoriteButton";
-import { ApprovalTag, AppTag, IntegrationTag, SkillTag, WorkflowTag } from "./Tag";
+import { ApprovalTag, AppTag, SkillTag, WorkflowTag } from "./Tag";
 import { VoteButton } from "./VoteButton";
 import styles from "./PromptList.module.css";
 
@@ -587,18 +586,10 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
                 </div>
                 {integrationOptions.length ? (
                   <div className={styles.group}>
-                    <span className="eyebrow">Integrations</span>
-                    <div className={styles.optionList}>
-                      {integrationOptions.map((i) => {
-                        const on = integrations.includes(i);
-                        return (
-                          <button key={i} type="button" className={styles.option} role="checkbox" aria-checked={on} onClick={() => toggleIntegration(i)}>
-                            {on ? <CheckSquare weight="fill" size={18} /> : <Square size={18} />}
-                            {i}
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <span className="eyebrow" id="integrations-label">
+                      Integrations
+                    </span>
+                    <MultiSelect labelId="integrations-label" options={integrationOptions} selected={integrations} onToggle={toggleIntegration} noun="integrations" />
                   </div>
                 ) : null}
                 <div className={styles.group}>
@@ -767,21 +758,13 @@ function PromptCard({ prompt: p, forks, meId, catalog }: { prompt: Prompt; forks
 function WorkflowCard({ prompt: p, forks, meId, catalog }: { prompt: Prompt; forks: number; meId: string; catalog: Catalog }) {
   const w = p.workflow;
   const parts = [`updated ${ago(p.updatedAt)}`, forks ? plural(forks, "adaptation") : null];
-  // Same badge budget as prompts and skills: kind, two integrations, "+N". Trigger, stage,
-  // origin and customer-ready live in the filters and on the detail page.
+  // Same badge budget as prompts and skills. Trigger, stage, integrations, origin and
+  // customer-ready live in the filters and on the detail page.
   return (
     <article className={styles.card}>
       <div className={styles.cardTags}>
         <ApprovalTag approval={p.approval} short />
         <WorkflowTag />
-        {w.integrations.slice(0, 2).map((i) => (
-          <IntegrationTag key={i} name={i} color={catalogIntegration(catalog, i)?.color} />
-        ))}
-        {w.integrations.length > 2 ? (
-          <span className="tag tag-light tag-muted" title={w.integrations.slice(2).join(", ")}>
-            +{w.integrations.length - 2}
-          </span>
-        ) : null}
         <div className="grow" />
         {p.parentId ? <GitFork weight="bold" size={15} className="muted" aria-label="Adaptation" /> : null}
         {p.visibility === "private" ? <LockSimple size={16} className="muted" aria-label="Private" /> : null}
@@ -810,5 +793,79 @@ function WorkflowCard({ prompt: p, forks, meId, catalog }: { prompt: Prompt; for
         <VoteButton promptId={p.id} count={p.upvoteUserIds.length} voted={p.upvoteUserIds.includes(meId)} />
       </div>
     </article>
+  );
+}
+
+/** A searchable multi-select: chosen values as removable tokens, options in a dropdown. */
+function MultiSelect({ labelId, options, selected, onToggle, noun }: { labelId: string; options: string[]; selected: string[]; onToggle: (v: string) => void; noun: string }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const wrap = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  const q = query.trim().toLowerCase();
+  const shown = options.filter((o) => !q || o.toLowerCase().includes(q));
+  return (
+    <div ref={wrap} className={styles.ms}>
+      <div className={styles.msField} onClick={() => setOpen(true)}>
+        {selected.map((v) => (
+          <span key={v} className={styles.msToken}>
+            {v}
+            <button type="button" aria-label={`Remove ${v}`} onClick={(e) => {
+                e.stopPropagation();
+                onToggle(v);
+              }}>
+              <X weight="bold" size={10} />
+            </button>
+          </span>
+        ))}
+        <input
+          className={styles.msInput}
+          role="combobox"
+          aria-expanded={open}
+          aria-labelledby={labelId}
+          aria-controls={`${labelId}-list`}
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setOpen(false);
+            if (e.key === "Enter" && shown[0]) {
+              e.preventDefault();
+              onToggle(shown[0]);
+              setQuery("");
+            }
+            if (e.key === "Backspace" && !query && selected.length) onToggle(selected[selected.length - 1]);
+          }}
+          placeholder={selected.length ? "" : `Search ${options.length} ${noun}…`}
+        />
+      </div>
+      {open ? (
+        <ul className={styles.msList} id={`${labelId}-list`} role="listbox" aria-multiselectable="true">
+          {shown.length ? (
+            shown.map((o) => {
+              const on = selected.includes(o);
+              return (
+                <li key={o} role="option" aria-selected={on} className={styles.msOpt} onMouseDown={(e) => e.preventDefault()} onClick={() => onToggle(o)}>
+                  {on ? <CheckSquare weight="fill" size={18} /> : <Square size={18} />}
+                  {o}
+                </li>
+              );
+            })
+          ) : (
+            <li className={styles.msEmpty}>No {noun} match “{query}”.</li>
+          )}
+        </ul>
+      ) : null}
+    </div>
   );
 }
