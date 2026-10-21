@@ -1,4 +1,5 @@
 import "server-only";
+import { approvalBoost, approvalRank } from "@/lib/approval";
 import { searchPrompts } from "@/lib/search";
 import type { Prompt } from "@/lib/types";
 import { type Library, popularity, relationTo } from "./library";
@@ -128,6 +129,9 @@ export function recommend(lib: Library, about: AboutMe, limit: number): Recommen
     } else if (tools.length && p.apps.length) {
       score -= 0.1;
     }
+    if (approvalRank(p.approval) === 2) reasons.push(`the gold standard${p.approval.useCase ? ` for ${p.approval.useCase}` : ""}`);
+    else if (approvalRank(p.approval) === 1) reasons.push("Enablement approved");
+    score += approvalBoost(p.approval);
     score += 0.03 * Math.log1p(popularity(p));
     picks.push({ item: p, score, why: reasons.join("; ") });
   }

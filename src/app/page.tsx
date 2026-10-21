@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { Header } from "@/components/Header";
 import { PromptList } from "@/components/PromptList";
 import { ToastFromQuery } from "@/components/Toast";
-import { canManageIntegrations, getCatalog, getCurrentUser, listPrompts, workflowsEnabled } from "@/lib/data";
+import { canManageIntegrations, enablementEnabled, getCatalog, getCurrentUser, listPrompts, workflowsEnabled } from "@/lib/data";
 import { shouldNudgeToSlack } from "@/lib/slackNudge";
 
 export const dynamic = "force-dynamic";
@@ -11,12 +11,13 @@ export const dynamic = "force-dynamic";
 export default async function DiscoverPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  const [prompts, catalog, nudge, workflowsOn, manageIntegrations] = await Promise.all([
+  const [prompts, catalog, nudge, workflowsOn, manageIntegrations, enablementOn] = await Promise.all([
     listPrompts(),
     getCatalog(),
     shouldNudgeToSlack(user),
     workflowsEnabled(),
     canManageIntegrations(),
+    enablementEnabled(),
   ]);
 
   return (
@@ -26,7 +27,7 @@ export default async function DiscoverPage() {
         <ToastFromQuery />
       </Suspense>
       <Suspense fallback={null}>
-        <PromptList view="discover" prompts={prompts} me={user} catalog={catalog} workflowsOn={workflowsOn} manageIntegrations={workflowsOn && manageIntegrations} />
+        <PromptList view="discover" prompts={prompts} me={user} catalog={catalog} workflowsOn={workflowsOn} manageIntegrations={workflowsOn && manageIntegrations} enablementOn={enablementOn} />
       </Suspense>
     </div>
   );

@@ -5,18 +5,16 @@
   padding-top: 12px;
 }
 
+/* Title, badges and description run the full width; actions sit underneath. */
 .head {
   display: flex;
-  flex-wrap: wrap;
-  gap: 24px;
-  align-items: flex-end;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 18px;
 }
 .headMain {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  flex: 1 1 480px;
   min-width: 0;
 }
 .headActions {
@@ -35,7 +33,6 @@
 .lede {
   font-size: 17px;
   color: var(--fg-muted);
-  max-width: 64ch;
   text-wrap: pretty;
 }
 

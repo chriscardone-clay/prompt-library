@@ -27,6 +27,8 @@ export interface ShareRowData {
 interface Props {
   promptId: string;
   customerReady: boolean;
+  /** Owner or editor: can mark it customer-ready and sees every link. Others see the links they published. */
+  canManage: boolean;
   /** The workflow's attachment names, offered at publish time. */
   attachments: string[];
   shares: ShareRowData[];
@@ -57,8 +59,8 @@ async function copyText(text: string) {
   }
 }
 
-/** "Published links": publish a read-only customer link and manage the live ones. Owners and editors only. */
-export function SharePanel({ promptId, customerReady, attachments, shares, updatedAt, origin }: Props) {
+/** "Published links": anyone can publish a read-only customer link once the workflow is customer-ready. */
+export function SharePanel({ promptId, customerReady, canManage, attachments, shares, updatedAt, origin }: Props) {
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState("");
   const [days, setDays] = useState(90);
@@ -91,14 +93,20 @@ export function SharePanel({ promptId, customerReady, attachments, shares, updat
     <div className="slab" style={{ gap: 12 }} id="links">
       <div className={styles.head}>
         <div className="section-title">Published links</div>
-        <span className="tiny muted">Owner &amp; editors</span>
+        <span className="tiny muted">{canManage ? "Every link" : "Links you published"}</span>
       </div>
 
       {!customerReady ? (
         <div className={styles.note}>
           <LockSimple size={15} />
           <span className="small">
-            Mark it customer-ready first: <Link href={`/prompts/${promptId}/edit`}>Edit</Link> → Details → Customer-ready.
+            {canManage ? (
+              <>
+                Mark it customer-ready first: <Link href={`/prompts/${promptId}/edit`}>Edit</Link> → Details → Customer-ready.
+              </>
+            ) : (
+              <>Its owner hasn&apos;t marked it customer-ready yet. Ask them, or adapt it and publish your own copy.</>
+            )}
           </span>
         </div>
       ) : published ? (

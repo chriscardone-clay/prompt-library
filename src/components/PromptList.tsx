@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckSquare, Cpu, FunnelSimple, GitFork, LockSimple, MagnifyingGlass, Square, X } from "@phosphor-icons/react";
+import { ArrowRight, CheckSquare, Cpu, FunnelSimple, GitFork, LockSimple, MagnifyingGlass, Medal, ShieldCheck, Square, X } from "@phosphor-icons/react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -9,20 +9,20 @@ import {
   activeTeams,
   toneStyle,
   appTone,
-  catalogIntegration,
   isKnownApp,
   REQUIRED_TONE,
   isKnownTeam,
   surfacesOf,
   type Catalog,
 } from "@/lib/catalog";
-import { isSort, isTrigger, SORT_LABELS, SORTS, STAGE_LABELS, TRIGGER_LABELS, WORKFLOW_TRIGGERS, type Kind, type Sort } from "@/lib/constants";
+import { isSort, isTrigger, SORT_LABELS, SORTS, TRIGGER_LABELS, WORKFLOW_TRIGGERS, type Kind, type Sort } from "@/lib/constants";
+import { approvalBoost, approvalRank, compareRecommended } from "@/lib/approval";
 import { ago, plural } from "@/lib/format";
 import { searchPrompts } from "@/lib/search";
 import type { Profile, Prompt } from "@/lib/types";
 import { Avatar } from "./Avatar";
 import { FavoriteButton } from "./FavoriteButton";
-import { AppTag, IntegrationTag, OriginTag, ReadyTag, SkillTag, TriggerTag, WorkflowTag } from "./Tag";
+import { ApprovalTag, AppTag, SkillTag, WorkflowTag } from "./Tag";
 import { VoteButton } from "./VoteButton";
 import styles from "./PromptList.module.css";
 
@@ -37,6 +37,8 @@ interface Props {
   workflowsOn?: boolean;
   /** Admins and Workflow maintainers get a link to the Integrations catalog. */
   manageIntegrations?: boolean;
+  /** ENABLEMENT_APPROVED: Recommended sort, the approved filter and the gold standards shelf. */
+  enablementOn?: boolean;
 }
 
 type Origin = "all" | "reference" | "adapted";
@@ -64,7 +66,9 @@ function serialiseSurfaces(s: Record<string, string[]>): string | null {
 }
 const listParam = (v: string[]) => (v.length ? v.join(",") : null);
 
-export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn = false, manageIntegrations = false }: Props) {
+export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn = false, manageIntegrations = false, enablementOn = false }: Props) {
+  const defaultSort: Sort = enablementOn ? "recommended" : "top";
+  const sorts = enablementOn ? SORTS : SORTS.filter((s) => s !== "recommended");
   const params = useSearchParams();
   const pathname = usePathname();
 
@@ -76,7 +80,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
     (patch: Record<string, string | null>) => {
       const next = new URLSearchParams(window.location.search);
       for (const [k, v] of Object.entries(patch)) {
-        if (v === null || v === "" || (k === "sort" && v === "top")) next.delete(k);
+        if (v === null || v === "" || (k === "sort" && v === defaultSort)) next.delete(k);
         else next.set(k, v);
       }
       const qs = next.toString();
@@ -84,7 +88,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
       // that don't carry its own internal history state.
       window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname);
     },
-    [pathname],
+    [pathname, defaultSort],
   );
 
   // The search box is local state for instant feedback; the URL follows it, debounced.
@@ -130,8 +134,10 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
   const apps = (params.get("apps") ?? "").split(",").filter((a) => isKnownApp(catalog, a));
   const surfaces = parseSurfaces(params.get("surfaces"), catalog);
   const teams = (params.get("teams") ?? "").split(",").filter((t) => isKnownTeam(catalog, t));
-  const sortParam = params.get("sort") ?? "top";
-  const sort: Sort = isSort(sortParam) ? sortParam : "top";
+  const sortParam = params.get("sort") ?? defaultSort;
+  const sort: Sort = isSort(sortParam) && (sorts as readonly string[]).includes(sortParam) ? sortParam : defaultSort;
+  const approvedParam = enablementOn ? params.get("approved") : null;
+  const approvedFilter: "approved" | "gold" | null = approvedParam === "gold" ? "gold" : approvedParam === "1" ? "approved" : null;
   const filtersOpen = params.get("filters") === "1";
 
   const setApps = (next: string[], nextSurfaces = surfaces) =>
@@ -157,7 +163,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
     if (qTimer.current) clearTimeout(qTimer.current);
     setQ("");
     lastWrittenQ.current = "";
-    writeUrl({ apps: null, surfaces: null, teams: null, q: null, triggers: null, integrations: null, ready: null });
+    writeUrl({ apps: null, surfaces: null, teams: null, q: null, triggers: null, integrations: null, ready: null, approved: null });
   };
 
   const activeCount =
@@ -166,7 +172,8 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
     teams.length +
     triggers.length +
     integrations.length +
-    (readyOnly ? 1 : 0);
+    (readyOnly ? 1 : 0) +
+    (approvedFilter ? 1 : 0);
 
   // Integrations to filter by: whatever the visible workflows use, most used first.
   const integrationOptions = useMemo(() => {
@@ -211,12 +218,15 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
       out = out.filter((p) => p.workflow.integrations.some((i) => want.includes(i.toLowerCase())));
     }
     if (readyOnly) out = out.filter((p) => p.workflow.customerReady);
+    if (approvedFilter) out = out.filter((p) => approvalRank(p.approval) >= (approvedFilter === "gold" ? 2 : 1));
     // Ranked search over title, description, notes/apps/teams and the prompt text
     // (SKILL.md for skills). While searching, relevance orders the list.
     const relevance = new Map<string, number>();
     if (needle) {
       const hits = searchPrompts(out, needle, catalog.apps.map((a) => a.name));
-      for (const h of hits) relevance.set(h.id, h.score);
+      // Approval reorders matches; it never adds items that didn't match.
+      const byId = new Map(out.map((p) => [p.id, p]));
+      for (const h of hits) relevance.set(h.id, h.score + approvalBoost(byId.get(h.id)!.approval));
       out = out.filter((p) => relevance.has(p.id));
     }
     const t = (s: string) => new Date(s).getTime();
@@ -225,6 +235,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
         const d = (relevance.get(b.id) ?? 0) - (relevance.get(a.id) ?? 0);
         if (Math.abs(d) > 1e-6) return d;
       }
+      if (sort === "recommended") return compareRecommended(a, b);
       if (sort === "top") {
         return b.upvoteUserIds.length - a.upvoteUserIds.length || t(b.updatedAt) - t(a.updatedAt);
       }
@@ -232,7 +243,16 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
       return t(b.updatedAt) - t(a.updatedAt);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prompts, kind, q, params.get("apps"), params.get("surfaces"), params.get("teams"), params.get("triggers"), params.get("integrations"), readyOnly, sort, catalog]);
+  }, [prompts, kind, q, params.get("apps"), params.get("surfaces"), params.get("teams"), params.get("triggers"), params.get("integrations"), readyOnly, approvedFilter, sort, catalog]);
+
+  // Gold standards shelf: Discover's landing view only (no search, no filters).
+  const gold = useMemo(
+    () =>
+      enablementOn && view === "discover"
+        ? prompts.filter((p) => approvalRank(p.approval) === 2 && (kind === "all" || p.kind === kind)).sort(compareRecommended)
+        : [],
+    [enablementOn, view, prompts, kind],
+  );
 
   // Reference architectures vs adaptations, counted before the toggle narrows the list.
   const originCounts = isWf
@@ -276,6 +296,9 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
     ...triggers.map((t) => ({ key: `tr-${t}`, label: `Trigger: ${TRIGGER_LABELS[t]}`, bg: "var(--white)", fg: "var(--fg)", remove: () => toggleTrigger(t) })),
     ...integrations.map((i) => ({ key: `i-${i}`, label: i, bg: "var(--white)", fg: "var(--fg)", remove: () => toggleIntegration(i) })),
     ...(readyOnly ? [{ key: "ready", label: "Customer-ready", bg: "var(--white)", fg: "var(--fg)", remove: () => writeUrl({ ready: null }) }] : []),
+    ...(approvedFilter
+      ? [{ key: "approved", label: approvedFilter === "gold" ? "Gold standards" : "Enablement approved", bg: "var(--white)", fg: "var(--fg)", remove: () => writeUrl({ approved: null }) }]
+      : []),
   ];
 
   return (
@@ -357,7 +380,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
           </div>
           <div className={styles.sortGroup} role="group" aria-label="Sort">
             <span className={`eyebrow ${styles.sortLabel}`}>Sort</span>
-            {SORTS.map((s) => (
+            {sorts.map((s) => (
               <button
                 key={s}
                 type="button"
@@ -369,6 +392,18 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
               </button>
             ))}
           </div>
+          {enablementOn ? (
+            <button
+              type="button"
+              className={styles.filtersBtn}
+              aria-pressed={!!approvedFilter}
+              data-active={approvedFilter ? "" : undefined}
+              onClick={() => writeUrl({ approved: approvedFilter ? null : "1" })}
+            >
+              <ShieldCheck weight="bold" size={16} />
+              Enablement approved
+            </button>
+          ) : null}
         </div>
         {originCounts ? (
           <div className={styles.activeRow}>
@@ -511,6 +546,28 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
               </div>
             </div>
 
+            {enablementOn ? (
+              <div className={styles.group}>
+                <span className="eyebrow">Enablement</span>
+                <div className={styles.optionList}>
+                  {(
+                    [
+                      ["approved", "1", "Enablement approved"],
+                      ["gold", "gold", "Gold standards only"],
+                    ] as const
+                  ).map(([key, value, label]) => {
+                    const on = approvedFilter === key;
+                    return (
+                      <button key={key} type="button" className={styles.option} role="checkbox" aria-checked={on} onClick={() => writeUrl({ approved: on ? null : value })}>
+                        {on ? <CheckSquare weight="fill" size={18} /> : <Square size={18} />}
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
             {isWf ? (
               <>
                 <div className={styles.group}>
@@ -529,18 +586,10 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
                 </div>
                 {integrationOptions.length ? (
                   <div className={styles.group}>
-                    <span className="eyebrow">Integrations</span>
-                    <div className={styles.optionList}>
-                      {integrationOptions.map((i) => {
-                        const on = integrations.includes(i);
-                        return (
-                          <button key={i} type="button" className={styles.option} role="checkbox" aria-checked={on} onClick={() => toggleIntegration(i)}>
-                            {on ? <CheckSquare weight="fill" size={18} /> : <Square size={18} />}
-                            {i}
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <span className="eyebrow" id="integrations-label">
+                      Integrations
+                    </span>
+                    <MultiSelect labelId="integrations-label" options={integrationOptions} selected={integrations} onToggle={toggleIntegration} noun="integrations" />
                   </div>
                 ) : null}
                 <div className={styles.group}>
@@ -570,6 +619,36 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
         ) : null}
 
         <div className={styles.results}>
+          {gold.length && !hasActive && origin === "all" ? (
+            <section className={styles.shelf} aria-labelledby="gold-shelf">
+              <div className={styles.shelfHead}>
+                <span className={styles.shelfIcon} aria-hidden="true">
+                  <Medal weight="bold" size={18} />
+                </span>
+                <div className="grow">
+                  <h2 id="gold-shelf" className={styles.shelfTitle}>
+                    Gold standards
+                  </h2>
+                  <div className="small muted">Enablement&apos;s best answer for each common job. Start here.</div>
+                </div>
+                {gold.length > 3 ? (
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => writeUrl({ approved: "gold" })}>
+                    All {gold.length}
+                    <ArrowRight weight="bold" size={13} />
+                  </button>
+                ) : null}
+              </div>
+              <div className={styles.shelfRow}>
+                {gold.slice(0, 3).map((p) => (
+                  <Link key={p.id} href={`/prompts/${p.id}`} className={styles.goldCard}>
+                    <span className={styles.useCase}>{p.approval.useCase || (p.kind === "workflow" ? "Workflow" : p.kind === "skill" ? "Skill" : "Prompt")}</span>
+                    <span className={styles.goldTitle}>{p.title}</span>
+                    <span className={`${styles.cardDesc} clamp-2`}>{p.description}</span>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ) : null}
           {shown.length ? (
             <div className={styles.grid}>
               {shown.map((p) => (
@@ -625,6 +704,7 @@ function PromptCard({ prompt: p, forks, meId, catalog }: { prompt: Prompt; forks
   return (
     <article className={styles.card}>
       <div className={styles.cardTags}>
+        <ApprovalTag approval={p.approval} short />
         {p.kind === "skill" ? <SkillTag /> : null}
         {p.apps.slice(0, 2).map((a) => (
           <AppTag key={a.app} app={a} tone={appTone(catalog, a.app)} short />
@@ -677,14 +757,16 @@ function PromptCard({ prompt: p, forks, meId, catalog }: { prompt: Prompt; forks
 
 function WorkflowCard({ prompt: p, forks, meId, catalog }: { prompt: Prompt; forks: number; meId: string; catalog: Catalog }) {
   const w = p.workflow;
-  const parts = [w.stage ? STAGE_LABELS[w.stage] : null, `updated ${ago(p.updatedAt)}`, forks ? plural(forks, "adaptation") : null];
+  const parts = [`updated ${ago(p.updatedAt)}`, forks ? plural(forks, "adaptation") : null];
+  // Same badge budget as prompts and skills. Trigger, stage, integrations, origin and
+  // customer-ready live in the filters and on the detail page.
   return (
     <article className={styles.card}>
       <div className={styles.cardTags}>
+        <ApprovalTag approval={p.approval} short />
         <WorkflowTag />
-        <OriginTag adapted={!!p.parentId} />
-        <TriggerTag trigger={w.trigger} />
         <div className="grow" />
+        {p.parentId ? <GitFork weight="bold" size={15} className="muted" aria-label="Adaptation" /> : null}
         {p.visibility === "private" ? <LockSimple size={16} className="muted" aria-label="Private" /> : null}
         <FavoriteButton promptId={p.id} favorited={p.favoritedBy.includes(meId)} />
       </div>
@@ -701,19 +783,6 @@ function WorkflowCard({ prompt: p, forks, meId, catalog }: { prompt: Prompt; for
         ) : (
           <p className={`${styles.cardDesc} clamp-2`}>{p.description}</p>
         )}
-        {w.integrations.length || w.customerReady ? (
-          <div className={styles.cardTags}>
-            {w.integrations.slice(0, 3).map((i) => (
-              <IntegrationTag key={i} name={i} color={catalogIntegration(catalog, i)?.color} />
-            ))}
-            {w.integrations.length > 3 ? (
-              <span className="tag tag-light tag-muted" title={w.integrations.slice(3).join(", ")}>
-                +{w.integrations.length - 3}
-              </span>
-            ) : null}
-            <ReadyTag ready={w.customerReady} />
-          </div>
-        ) : null}
       </div>
       <div className={styles.cardFoot}>
         <Avatar person={p.owner} size={26} />
@@ -724,5 +793,79 @@ function WorkflowCard({ prompt: p, forks, meId, catalog }: { prompt: Prompt; for
         <VoteButton promptId={p.id} count={p.upvoteUserIds.length} voted={p.upvoteUserIds.includes(meId)} />
       </div>
     </article>
+  );
+}
+
+/** A searchable multi-select: chosen values as removable tokens, options in a dropdown. */
+function MultiSelect({ labelId, options, selected, onToggle, noun }: { labelId: string; options: string[]; selected: string[]; onToggle: (v: string) => void; noun: string }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const wrap = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  const q = query.trim().toLowerCase();
+  const shown = options.filter((o) => !q || o.toLowerCase().includes(q));
+  return (
+    <div ref={wrap} className={styles.ms}>
+      <div className={styles.msField} onClick={() => setOpen(true)}>
+        {selected.map((v) => (
+          <span key={v} className={styles.msToken}>
+            {v}
+            <button type="button" aria-label={`Remove ${v}`} onClick={(e) => {
+                e.stopPropagation();
+                onToggle(v);
+              }}>
+              <X weight="bold" size={10} />
+            </button>
+          </span>
+        ))}
+        <input
+          className={styles.msInput}
+          role="combobox"
+          aria-expanded={open}
+          aria-labelledby={labelId}
+          aria-controls={`${labelId}-list`}
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setOpen(false);
+            if (e.key === "Enter" && shown[0]) {
+              e.preventDefault();
+              onToggle(shown[0]);
+              setQuery("");
+            }
+            if (e.key === "Backspace" && !query && selected.length) onToggle(selected[selected.length - 1]);
+          }}
+          placeholder={selected.length ? "" : `Search ${options.length} ${noun}…`}
+        />
+      </div>
+      {open ? (
+        <ul className={styles.msList} id={`${labelId}-list`} role="listbox" aria-multiselectable="true">
+          {shown.length ? (
+            shown.map((o) => {
+              const on = selected.includes(o);
+              return (
+                <li key={o} role="option" aria-selected={on} className={styles.msOpt} onMouseDown={(e) => e.preventDefault()} onClick={() => onToggle(o)}>
+                  {on ? <CheckSquare weight="fill" size={18} /> : <Square size={18} />}
+                  {o}
+                </li>
+              );
+            })
+          ) : (
+            <li className={styles.msEmpty}>No {noun} match “{query}”.</li>
+          )}
+        </ul>
+      ) : null}
+    </div>
   );
 }

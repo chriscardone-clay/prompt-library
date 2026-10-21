@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { APPROVED_BOOST, GOLD_BOOST } from "@/lib/approval";
 import { type Intent, parseIntent, suggestTitle } from "./lexical";
 
 /** A public library item, compacted for the model and for building replies. */
@@ -14,6 +15,9 @@ export interface Candidate {
   models: { app: string; model: string; required: boolean }[];
   audiences: string[];
   updated_at: string;
+  /** Enablement: 2 = gold standard, 1 = approved (current version), 0 = neither or the asker lacks ENABLEMENT_APPROVED. */
+  tier: 0 | 1 | 2;
+  useCase: string;
 }
 
 /** Above this many public items we shortlist with search instead of sending all. */
@@ -30,9 +34,13 @@ interface Row {
   audiences: string[] | null;
   updated_at: string;
   prompt_apps: { app: string; model?: string | null; model_required?: boolean | null }[] | null;
+  approval?: string | null;
+  approval_stale?: boolean | null;
+  use_case?: { name: string } | null;
 }
 
-function toCandidate(r: Row): Candidate {
+function toCandidate(r: Row, enablement: boolean): Candidate {
+  const tier = !enablement || r.approval_stale ? 0 : r.approval === "gold" ? 2 : r.approval === "approved" ? 1 : 0;
   return {
     id: r.id,
     title: r.title,
@@ -43,10 +51,13 @@ function toCandidate(r: Row): Candidate {
     models: (r.prompt_apps ?? []).filter((a) => (a.model ?? "").trim()).map((a) => ({ app: a.app, model: (a.model ?? "").trim(), required: !!a.model_required })),
     audiences: r.audiences ?? [],
     updated_at: r.updated_at,
+    tier,
+    useCase: tier ? (r.use_case?.name ?? "") : "",
   };
 }
 
-const SELECT = "id, title, kind, description, notes, audiences, updated_at, prompt_apps ( app, model, model_required )";
+const SELECT =
+  "id, title, kind, description, notes, audiences, updated_at, approval, approval_stale, use_case:enablement_use_cases!prompts_approval_use_case_fkey ( name ), prompt_apps ( app, model, model_required )";
 
 interface SearchHit {
   id: string;
@@ -81,14 +92,17 @@ async function runSearch(client: SupabaseClient, intent: Intent, raw: string, li
  * are shortlisted by search plus the newest items, so brand-new additions are
  * still discoverable when the question is vague.
  */
-export async function loadCandidates(client: SupabaseClient, question: string): Promise<{ items: Candidate[]; total: number; shortlisted: boolean }> {
+export async function loadCandidates(client: SupabaseClient, question: string, enablement = false): Promise<{ items: Candidate[]; total: number; shortlisted: boolean }> {
+  const toC = (r: Row) => toCandidate(r, enablement);
   const { count } = await client.from("prompts").select("id", { count: "exact", head: true }).eq("visibility", "public").neq("kind", "workflow");
   const total = count ?? 0;
 
   if (total <= SEND_ALL_UP_TO) {
     const { data, error } = await client.from("prompts").select(SELECT).eq("visibility", "public").neq("kind", "workflow").order("updated_at", { ascending: false });
     if (error) throw new Error(`loadCandidates: ${error.message}`);
-    return { items: ((data ?? []) as unknown as Row[]).map(toCandidate), total, shortlisted: false };
+    // Gold standards and approved items first, so the model sees them first.
+    const items = ((data ?? []) as unknown as Row[]).map(toC).sort((a, b) => b.tier - a.tier);
+    return { items, total, shortlisted: false };
   }
 
   const intent = parseIntent(question, await appNames(client));
@@ -104,7 +118,7 @@ export async function loadCandidates(client: SupabaseClient, question: string): 
   for (const r of [...((hitRows ?? []) as unknown as Row[]), ...((newest.data ?? []) as unknown as Row[])]) {
     if (seen.has(r.id)) continue;
     seen.add(r.id);
-    items.push(toCandidate(r));
+    items.push(toC(r));
   }
   items.sort((a, b) => (order.get(a.id) ?? 999) - (order.get(b.id) ?? 999));
   return { items, total, shortlisted: true };
@@ -149,9 +163,11 @@ export async function lexicalMatches(client: SupabaseClient, question: string, i
       : h.title_sim >= 0.4
         ? "Close match on the title"
         : "Related by meaning";
-    matches.push({ candidate: c, why, score: h.score });
-    if (matches.length >= limit) break;
+    // Same approval boost as Discover, applied to matches only.
+    matches.push({ candidate: c, why: c.tier === 2 ? `${why} · gold standard` : c.tier === 1 ? `${why} · Enablement approved` : why, score: h.score + (c.tier === 2 ? GOLD_BOOST : c.tier === 1 ? APPROVED_BOOST : 0) });
   }
+  matches.sort((a, b) => b.score - a.score);
+  matches.splice(limit);
   return { matches, intent, understood: intent.words.join(" "), suggestion: matches.length ? undefined : suggestTitle(intent) };
 }
 
@@ -164,6 +180,7 @@ export function describeCandidates(items: Candidate[]): string {
         c.apps.length ? `for ${c.apps.join(", ")}` : null,
         c.models.length ? `models: ${c.models.map((m) => `${m.app} ${m.model}${m.required ? " (required)" : " (recommended)"}`).join("; ")}` : null,
         c.audiences.length ? `teams: ${c.audiences.join(", ")}` : null,
+        c.tier === 2 ? `GOLD STANDARD${c.useCase ? ` for ${c.useCase}` : ""} (Enablement)` : c.tier === 1 ? "Enablement approved" : null,
       ].filter(Boolean);
       const notes = c.notes ? ` Notes: ${c.notes.replace(/\s+/g, " ").slice(0, 240)}` : "";
       return `${i + 1}. [${c.id}] ${c.title} — ${bits.join(" · ")}. ${c.description.replace(/\s+/g, " ")}${notes}`;

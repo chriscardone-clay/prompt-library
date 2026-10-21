@@ -1,6 +1,9 @@
-import { CheckCircle, Files, FlowArrow, GitFork, LockSimple } from "@phosphor-icons/react/dist/ssr";
+import { ArrowsClockwise, CheckCircle, Files, FlowArrow, GitFork, LockSimple, Medal, ShieldCheck } from "@phosphor-icons/react/dist/ssr";
 import {
   ADAPTATION_TONE,
+  APPROVED_TONE,
+  GOLD_TONE,
+  STALE_TONE,
   FALLBACK_TONE,
   NOT_READY_TONE,
   READY_TONE,
@@ -10,7 +13,7 @@ import {
   WORKFLOW_TONE,
 } from "@/lib/catalog";
 import { STAGE_LABELS, TRIGGER_LABELS, type WorkflowStage, type WorkflowTrigger } from "@/lib/constants";
-import type { PromptApp } from "@/lib/types";
+import type { Approval, PromptApp } from "@/lib/types";
 
 export function appLabel(a: PromptApp): string {
   return a.surfaces.length ? `${a.app} · ${a.surfaces.join(", ")}` : a.app;
@@ -100,6 +103,30 @@ export function IntegrationTag({ name, color }: { name: string; color?: string }
     <span className="tag tag-light">
       <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 3, background: color ?? "var(--oat-300)", flex: "none" }} />
       {name}
+    </span>
+  );
+}
+
+/** Enablement's verdict: gold standard, approved, or approved-then-edited. Nothing for unreviewed items. */
+export function ApprovalTag({ approval, short = false }: { approval: Approval; short?: boolean }) {
+  if (approval.tier === "none") return null;
+  if (!approval.current) {
+    return (
+      <span className="tag tone" style={toneStyle(STALE_TONE)} title="Enablement approved an earlier version. It has changed since.">
+        <ArrowsClockwise weight="bold" size={11} />
+        {short ? "Earlier version approved" : "Approved earlier version"}
+      </span>
+    );
+  }
+  const gold = approval.tier === "gold";
+  return (
+    <span
+      className="tag tone"
+      style={toneStyle(gold ? GOLD_TONE : APPROVED_TONE)}
+      title={gold ? `Gold standard${approval.useCase ? ` for ${approval.useCase}` : ""}` : "Reviewed and approved by Enablement"}
+    >
+      {gold ? <Medal weight="bold" size={11} /> : <ShieldCheck weight="bold" size={11} />}
+      {gold ? "Gold standard" : short ? "Approved" : "Enablement approved"}
     </span>
   );
 }

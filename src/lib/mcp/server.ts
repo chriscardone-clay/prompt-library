@@ -21,11 +21,13 @@ const INSTRUCTIONS = `Clay's internal prompt library (ClayPrompts): prompts (tex
 - When the person asks what they're missing, what they should be using, or for recommendations, call recommend_for_me with a profile built from what you know about them (memory, past conversations, this chat).
 - When the person wants to save something to the library ("save this as a prompt", "make this a skill", "add this to ClayPrompts"), call start_saving first and follow its steps: draft it, confirm the details with them, preview_item, and only call create_item after they say yes.
 - When the person wants to change one of their items ("make it public", "add Sales as a team", "tighten the prompt"), fetch it, call preview_changes with only the fields that change, show them the result, and call update_item (passing based_on) only after they say yes. Only owners and editors can edit; nothing can be deleted from chat.
+- Items marked "Gold standard" or "Enablement approved" were reviewed by Clay's Enablement team. When they fit the task, prefer them (gold standards first) and say so; don't push one that doesn't fit over a better match.
 - Always give the item's link so they can open, upvote or fork it. Never invent items; only recommend what the tools return.`;
 
 const kind = z.enum(["prompt", "skill"]).optional().describe("Only prompts or only skills");
 const app = z.string().optional().describe("Only items built for this app, e.g. Claude, Town, ChatGPT, Claygent, Granola");
 const team = z.string().optional().describe("Only items for this team, e.g. GTM, Sales, CS");
+const approved_only = z.boolean().optional().describe("Only gold standards and Enablement approved items");
 
 function text(t: string) {
   return { content: [{ type: "text" as const, text: t }] };
@@ -126,15 +128,15 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
       title: "Search the prompt library",
       description:
         "Ranked search over prompts and skills by what they do. Pass the task in plain words (\"recap a customer call for Slack\", \"Clay formula to score accounts\"). Returns compact cards with ids; fetch one with get_prompt or get_skill before using it.",
-      inputSchema: { query: z.string().min(1).describe("What the person wants to do"), kind, app, team, limit: z.number().int().min(1).max(20).optional() },
+      inputSchema: { query: z.string().min(1).describe("What the person wants to do"), kind, app, team, approved_only, limit: z.number().int().min(1).max(20).optional() },
       annotations: readOnly,
     },
-    async ({ query, kind, app, team, limit }) => {
+    async ({ query, kind, app, team, approved_only, limit }) => {
       const l = await library();
-      const hits = search(l, query, { kind, app, team }, limit ?? 8);
+      const hits = search(l, query, { kind, app, team, approvedOnly: approved_only }, limit ?? 8);
       if (!hits.length) {
         return text(
-          `Nothing in the library matches "${query}"${kind || app || team ? " with those filters" : ""}. Try fewer words or no filters, or browse_library. If the person writes one that works, they can add it at ${l.origin}/prompts/new so the next person finds it.`,
+          `Nothing in the library matches "${query}"${kind || app || team || approved_only ? " with those filters" : ""}. Try fewer words or no filters, or browse_library. If the person writes one that works, they can add it at ${l.origin}/prompts/new so the next person finds it.`,
         );
       }
       return text(
@@ -147,22 +149,24 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
     "browse_library",
     {
       title: "Browse the prompt library",
-      description: "List prompts and skills, optionally filtered by kind, app or team, sorted by top (most upvoted/favorited), new, or updated. Use search_library when you have a task in mind.",
+      description:
+        "List prompts and skills, optionally filtered by kind, app or team, sorted by recommended (gold standards, then Enablement approved, then most upvoted), top (most upvoted/favorited), new, or updated. Use search_library when you have a task in mind.",
       inputSchema: {
         kind,
         app,
         team,
-        sort: z.enum(["top", "new", "updated"]).optional().describe("Default: top"),
+        approved_only,
+        sort: z.enum(["recommended", "top", "new", "updated"]).optional().describe("Default: recommended when Enablement approvals are on for this person, else top"),
         limit: z.number().int().min(1).max(50).optional(),
         offset: z.number().int().min(0).optional(),
       },
       annotations: readOnly,
     },
-    async ({ kind, app, team, sort, limit, offset }) => {
+    async ({ kind, app, team, approved_only, sort, limit, offset }) => {
       const l = await library();
       const n = limit ?? 15;
       const from = offset ?? 0;
-      const { total, page } = browse(l, { kind, app, team }, sort ?? "top", n, from);
+      const { total, page } = browse(l, { kind, app, team, approvedOnly: approved_only }, sort ?? (l.enablement ? "recommended" : "top"), n, from);
       if (!total) return text("No items match those filters. Call list_catalog to see the app and team names in use.");
       const more = from + page.length < total ? `\n\n${total - from - page.length} more: call again with offset ${from + page.length}.` : "";
       return text([`${total} item${total === 1 ? "" : "s"}; showing ${from + 1}–${from + page.length}:`, ...page.map((p) => summarize(l, p))].join("\n\n") + more);
