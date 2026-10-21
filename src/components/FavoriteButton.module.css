@@ -9,8 +9,11 @@
   --heart: var(--pom-400);
 }
 
-/* Cards: 32px round target, tucked into the tag row's right edge. */
+/* Cards: 32px round target, tucked into the tag row's right edge, above the
+   title link's whole-card overlay so the click favorites instead of opening. */
 .icon {
+  position: relative;
+  z-index: 1;
   width: 32px;
   height: 32px;
   margin: -6px -8px -6px 0;
