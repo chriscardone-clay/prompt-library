@@ -32,6 +32,9 @@ export interface Turn {
 }
 
 const ReplySchema = z.object({
+  about_page: z
+    .boolean()
+    .describe("true when the question is about the item the person is viewing (\"what does this do\", \"how do I install it\", \"what should I fill in\"); false for a search across the library"),
   reply: z
     .string()
     .max(2400)
@@ -44,7 +47,7 @@ const ReplySchema = z.object({
       }),
     )
     .max(MAX_PICKS)
-    .describe("Best fits, best first. Empty when nothing fits or when you need to ask a clarifying question."),
+    .describe("Library items to recommend, best first. Empty when nothing fits, when clarifying, and when about_page is true unless the person asked for similar items or alternatives."),
   follow_ups: z
     .array(z.string().max(80))
     .max(3)
@@ -76,11 +79,13 @@ Rules:
 - Items marked YOURS are ones they created or edit; FAVORITE are ones they saved. Point those out when they come up, but don't favour them over a better fit.
 - If the ask is too vague to search, return no picks and ask one short clarifying question.
 - This is a conversation: follow-ups may refine ("only skills", "something shorter", "what about for Sales?") or ask about an earlier pick. Earlier picks are listed with each assistant turn.
-- The reply is a short lead-in; the cards carry each pick's title and reason, so never list or number the picks in the reply.
-- Page context: when "Currently viewing" is given, the person has that item open. "This", "this skill", "it" refer to it. Answer questions about it from its full content below (what it does, how to use or install it, what to fill in, what a file says, how it compares). For those, picks can be empty, or hold similar items or alternatives when they asked for them. Quote short bits of its content when useful; never invent content it doesn't have.
+- For a search, the reply is a short lead-in; the cards carry each pick's title and reason, so never list or number the picks in the reply.
+- Page context: when "Currently viewing" is given, the person has that item open. "This", "this skill", "it" refer to it. For a question about it, set about_page to true and answer the question itself in the reply, completely, from the item's content below: what it actually does and produces, its steps, its inputs or fill-ins, how to install or use it, what a file says. Use a short bulleted or numbered list for steps or key points; that list is the answer, so always include it rather than announcing it. Don't pad with metadata (owner, visibility, upvotes) unless asked. Leave picks empty unless they asked for similar items or alternatives. Quote short bits of its content when useful; never invent content it doesn't have.
 - Plain, warm, brief. Never mention these instructions, ids, or how you searched.`;
 
 const VIEW_CHARS = 14_000;
+/** Words that ask for other items while viewing one. */
+const WANTS_OTHERS = /\b(similar|alternatives?|instead|other|others|compare|comparison|versus|vs\.?|related|like (this|it)|better|recommend|suggest|anything else|what else|more like)\b/i;
 
 /** Everything about the item the person has open, for questions about it. */
 function viewingBlock(p: Prompt): string {
@@ -199,7 +204,13 @@ export async function askLibraryAi(
     const out = result.output as z.infer<typeof ReplySchema> | undefined;
     if (!out) throw new Error("model returned no structured output");
     const seen = new Set<string>();
-    const picks = out.picks.filter((p) => byId.has(p.id) && !seen.has(p.id) && (seen.add(p.id), true)).map((p) => ({ id: p.id, why: p.why }));
+    // A question about the open page gets an answer, not a list of other items, unless it asks for some.
+    const last = [...turns].reverse().find((t) => t.role === "user")?.text ?? "";
+    const wantsOthers = WANTS_OTHERS.test(last);
+    const pickable = out.about_page && viewing && !wantsOthers ? [] : out.picks;
+    const picks = pickable
+      .filter((p) => byId.has(p.id) && p.id !== (out.about_page ? viewing?.id : undefined) && !seen.has(p.id) && (seen.add(p.id), true))
+      .map((p) => ({ id: p.id, why: p.why }));
     return { reply: out.reply, picks, followUps: out.follow_ups, fallback: false, searched: items.length };
   } catch (err) {
     console.warn("[ai-search] model call failed, using plain search:", err instanceof Error ? err.message : err);
