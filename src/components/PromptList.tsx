@@ -28,8 +28,11 @@ import { ApprovalTag, AppTag, SkillTag, WorkflowTag } from "./Tag";
 import { VoteButton } from "./VoteButton";
 import styles from "./PromptList.module.css";
 
+type Visibility = "mine" | "private" | "public";
+const isVisibility = (v: string | null): v is Visibility => v === "mine" || v === "private" || v === "public";
+
 interface Props {
-  view: "discover" | "mine" | "favorites";
+  view: "discover" | "favorites";
   prompts: Prompt[];
   /** Used for fork counts on the Created / Favorites views, where `prompts` is a subset. */
   allPrompts?: Prompt[];
@@ -160,6 +163,15 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
   const sort: Sort = isSort(sortParam) && (sorts as readonly string[]).includes(sortParam) ? sortParam : defaultSort;
   const approvedParam = enablementOn ? params.get("approved") : null;
   const approvedFilter: "approved" | "gold" | null = approvedParam === "gold" ? "gold" : approvedParam === "1" ? "approved" : null;
+  const visParam = params.get("visibility");
+  const visibility: Visibility | null = isVisibility(visParam) ? visParam : null;
+  const myEmail = me.email.toLowerCase();
+  const isMine = (p: Prompt) => p.ownerId === me.id || p.editors.some((e) => e.id === me.id || e.email.toLowerCase() === myEmail);
+  const visibilityTest: Record<Visibility, (p: Prompt) => boolean> = {
+    mine: isMine,
+    private: (p) => p.visibility === "private",
+    public: (p) => p.visibility === "public",
+  };
 
   const setApps = (next: string[], nextSurfaces = surfaces) =>
     writeUrl({ apps: listParam(next), surfaces: serialiseSurfaces(nextSurfaces) });
@@ -190,7 +202,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
     lastWrittenQ.current = "";
     for (const t of Object.values(textTimers.current)) clearTimeout(t);
     setTextDraft({});
-    writeUrl({ apps: null, surfaces: null, teams: null, authors: null, q: null, title: null, desc: null, contents: null, triggers: null, integrations: null, stages: null, ready: null, approved: null, origin: null });
+    writeUrl({ apps: null, surfaces: null, teams: null, authors: null, visibility: null, q: null, title: null, desc: null, contents: null, triggers: null, integrations: null, stages: null, ready: null, approved: null, origin: null });
   };
 
   const activeCount =
@@ -198,6 +210,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
     Object.values(surfaces).reduce((n, v) => n + (v?.length ?? 0), 0) +
     teams.length +
     authors.length +
+    (visibility ? 1 : 0) +
     (titleQ ? 1 : 0) +
     (descQ ? 1 : 0) +
     (bodyQ ? 1 : 0) +
@@ -245,6 +258,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
     }
     if (teams.length) out = out.filter((p) => p.audiences.some((a) => teams.includes(a)));
     if (authors.length) out = out.filter((p) => authors.includes(p.ownerId));
+    if (visibility) out = out.filter(visibilityTest[visibility]);
     if (titleQ) out = out.filter((p) => p.title.toLowerCase().includes(titleQ));
     if (descQ) out = out.filter((p) => p.description.toLowerCase().includes(descQ));
     if (bodyQ) out = out.filter((p) => contentsOf(p).includes(bodyQ));
@@ -280,14 +294,12 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
       return t(b.updatedAt) - t(a.updatedAt);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prompts, kind, q, params.get("apps"), params.get("surfaces"), params.get("teams"), params.get("authors"), titleQ, descQ, bodyQ, params.get("triggers"), params.get("integrations"), params.get("stages"), readyOnly, approvedFilter, sort, catalog]);
+  }, [prompts, kind, q, params.get("apps"), params.get("surfaces"), params.get("teams"), params.get("authors"), visibility, titleQ, descQ, bodyQ, params.get("triggers"), params.get("integrations"), params.get("stages"), readyOnly, approvedFilter, sort, catalog]);
 
   const shown = origin === "all" ? list : list.filter((p) => (origin === "adapted" ? !!p.parentId : !p.parentId));
 
   const title =
-    view === "mine"
-      ? "Created"
-      : view === "favorites"
+    view === "favorites"
         ? "Favorites"
         : kind === "skill"
           ? "Discover skills"
@@ -297,11 +309,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
               ? "Discover workflows"
               : "Discover";
   const countLabel =
-    view === "mine"
-      ? `${plural(shown.length, "item")} you own or edit`
-      : view === "favorites"
-        ? `${plural(shown.length, "item")} you saved`
-        : plural(shown.length, kind === "all" ? "item" : kind);
+    view === "favorites" ? `${plural(shown.length, "item")} you saved` : plural(shown.length, kind === "all" ? "item" : kind);
   const newHref = kind === "skill" ? "/skills/new" : kind === "workflow" ? "/workflows/new" : "/prompts/new";
   const newLabel = kind === "skill" ? "New skill" : kind === "workflow" ? "New workflow" : "New prompt";
 
@@ -359,6 +367,20 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
       clear: () => writeUrl({ authors: null }),
     };
   })();
+  // Yours covers what the old Created page listed: items you own or edit, private ones included.
+  const visibilityFacet: Facet = {
+    key: "visibility",
+    label: "Visibility",
+    single: true,
+    options: [
+      { value: "mine", label: "Yours (created or editing)", count: countOf(visibilityTest.mine) },
+      { value: "private", label: "Private", count: countOf(visibilityTest.private) },
+      { value: "public", label: "Public", count: countOf(visibilityTest.public) },
+    ],
+    selected: visibility ? [visibility] : [],
+    toggle: (v) => toggleOne("visibility", visibility, v),
+    clear: () => writeUrl({ visibility: null }),
+  };
   const textFields: TextField[] = [
     { key: "title", label: "Title", placeholder: "Words in the title", value: textValue("title"), onChange: (v) => setText("title", v) },
     { key: "desc", label: "Description", placeholder: "Words in the description", value: textValue("desc"), onChange: (v) => setText("desc", v) },
@@ -407,6 +429,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
         },
         teamFacet,
         authorFacet,
+        visibilityFacet,
         {
           key: "stage",
           label: "Stage",
@@ -438,7 +461,7 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
         },
         ...(enablementOn ? [enablementFacet] : []),
       ]
-    : [appFacet, teamFacet, authorFacet, ...(enablementOn ? [enablementFacet] : [])];
+    : [appFacet, teamFacet, authorFacet, visibilityFacet, ...(enablementOn ? [enablementFacet] : [])];
 
   return (
     <section className={styles.section}>

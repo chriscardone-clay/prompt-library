@@ -13,7 +13,7 @@ import styles from "./Header.module.css";
 
 interface Props {
   user: Profile;
-  active?: "discover" | "mine" | "favorites" | "enablement" | "connect" | null;
+  active?: "discover" | "favorites" | "enablement" | "connect" | null;
   /** Show the "join #auto-clayprompts" banner under the header (decided server-side). */
   slackNudge?: boolean;
 }
@@ -37,9 +37,6 @@ export async function Header({ user, active = null, slackNudge = false }: Props)
         <Link href="/favorites" className={styles.navLink} aria-current={active === "favorites" ? "page" : undefined}>
           <Heart weight="fill" size={14} className={styles.heart} />
           Favorites
-        </Link>
-        <Link href="/mine" className={styles.navLink} aria-current={active === "mine" ? "page" : undefined}>
-          Created
         </Link>
         {enablementNav ? (
           <Link href="/enablement" className={styles.navLink} aria-current={active === "enablement" ? "page" : undefined}>
