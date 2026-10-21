@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { ALLOWED_EMAIL_DOMAIN } from "@/lib/constants";
-import { cookieOptions } from "./cookies";
+import { cookieOptionsFor, isEmbeddedRequest } from "./cookies";
 import { supabaseKey, supabaseUrl } from "./env";
 
 // /api/digest authenticates itself with CRON_SECRET (see src/app/api/digest/route.ts);
@@ -22,7 +22,7 @@ export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(supabaseUrl(), supabaseKey(), {
-    cookieOptions,
+    cookieOptions: cookieOptionsFor(isEmbeddedRequest(request.cookies)),
     cookies: {
       getAll() {
         return request.cookies.getAll();

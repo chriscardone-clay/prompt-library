@@ -49,7 +49,7 @@ export async function signInWithGoogle(formData: FormData) {
  */
 export async function beginEmbedSignIn(): Promise<ActionResult<{ url: string }>> {
   // Inside the iframe the verifier cookie must be SameSite=None + Partitioned.
-  const supabase = await createClient({ pkceCookie: "partitioned" });
+  const supabase = await createClient({ embed: true });
   const origin = await getRequestOrigin();
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
