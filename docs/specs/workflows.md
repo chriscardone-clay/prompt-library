@@ -135,6 +135,9 @@ RLS: owners and editors of the item can select their own item's shares. Inserts,
 ### Discover and lists
 - The All / Prompts / Skills toggle becomes **All / Prompts / Skills / Workflows**. The URL is `?kind=workflows`, and `/workflows` redirects to it, matching `/skills`.
 - With Workflows selected, the Filters panel gains **Trigger** and **Integrations** (multi-select). Both are stored in the URL like the existing filters.
+- With Workflows selected, the results bar adds a **Show** toggle: All · Reference architectures · Adaptations (with counts, stored as `?origin=reference|adapted`). A reference architecture is a workflow with no parent; an adaptation is any fork. The toggle only filters. Every adaptation still shows under All.
+- Every workflow card and detail page carries a type label: **Reference architecture** (slushie tint) or **Adaptation** (ube tint). Adaptations also keep the "Adapted for …" line.
+- Add **Services** to the teams catalog in /admin so it appears under "Built for". This is a data change, not code.
 - **Card:** a Workflow badge, title, description, the trigger as a small label, up to three integration chips plus "+N", the stage badge, and a "Customer-ready" tick when set. Votes, forks and the owner show as they do now.
 
 ### Detail page
