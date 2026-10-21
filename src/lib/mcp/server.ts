@@ -6,7 +6,7 @@ import { activeApps, activeTeams } from "@/lib/catalog";
 import { SKILL_TEMPLATE } from "@/lib/constants";
 import { fillBody, parsePlaceholders } from "@/lib/placeholders";
 import { skillMd, skillSlug } from "@/lib/skills";
-import { browse, findItem, installNotes, type Library, loadLibrary, search, skillFiles, summarize } from "./library";
+import { browse, claudeLink, findItem, installNotes, isMine, type Library, loadLibrary, search, skillFiles, summarize } from "./library";
 import type { Prompt } from "@/lib/types";
 import { itemShape, prepare, previewText, saveItem } from "./create";
 import { editPreviewText, editShape, prepareEdit, saveEdit } from "./edit";
@@ -14,20 +14,34 @@ import { itemUrl } from "./library";
 import { type McpUser, WRITE_SCOPE } from "./oauth";
 import { recommend } from "./recommend";
 
-const INSTRUCTIONS = `Clay's internal prompt library (ClayPrompts): prompts (text you paste into Town, Claude, ChatGPT, Claygent, Monty, Granola…) and skills (bundles of SKILL.md plus reference files you install into a tool), written and upvoted by people at Clay.
+const INSTRUCTIONS = `Clay's internal prompt library (ClayPrompts): prompts (text you paste into Claude, ChatGPT, Town, Claygent, Monty, Granola…), skills (SKILL.md bundles installed into a tool) and workflows, written by people at Clay and reviewed by Enablement. Think of it as the person's own repository of what works, shared with their team.
 
-- To find something for a task, call search_library with the task in plain words; use browse_library to list by app, team or popularity.
-- Before using an item, fetch it: get_prompt returns the full prompt text (with {{fill-ins}} filled when you pass values); get_skill returns the skill's files and how to install it.
-- When the person asks what they're missing, what they should be using, or for recommendations, call recommend_for_me with a profile built from what you know about them (memory, past conversations, this chat).
-- When the person wants to save something to the library ("save this as a prompt", "make this a skill", "add this to ClayPrompts"), call start_saving first and follow its steps: draft it, confirm the details with them, preview_item, and only call create_item after they say yes.
-- When the person wants to change one of their items ("make it public", "add Sales as a team", "tighten the prompt"), fetch it, call preview_changes with only the fields that change, show them the result, and call update_item (passing based_on) only after they say yes. Only owners and editors can edit; nothing can be deleted from chat.
-- Items marked "Gold standard" or "Enablement approved" were reviewed by Clay's Enablement team. When they fit the task, prefer them (gold standards first) and say so; don't push one that doesn't fit over a better match.
-- Always give the item's link so they can open, upvote or fork it. Never invent items; only recommend what the tools return.`;
+Finding
+- For a task, call search_library with the task in plain words; browse_library lists by app, team or popularity.
+- "My prompt for X", "pull my …", "the one I saved": search_library with mine: true. That covers their private items too.
+- Items marked "Gold standard" or "Enablement approved" were reviewed by Clay's Enablement team and come first in results. When one fits, recommend it first and say Enablement recommends it. Only pass over it for a clearly better fit.
+
+Using
+- "Run that prompt", "use it": call run_prompt. Ask for every missing fill-in in one short message (use what you already know from the chat first), call run_prompt again with the values, then carry out the returned prompt right here in the conversation.
+- "Install that skill": call install_skill with where they work. If the skill has a claude.ai link, send them there; don't rebuild it from files. In Claude Code, write the files only after they say yes.
+
+Saving and improving
+- "Save this" / "add this to my library": start_saving, draft it, confirm the details (private by default when they say "my library"), preview_item, then create_item after they say yes.
+- "Learn from this chat", "make that prompt better next time": call start_improving with the item's id and follow it. Owners and editors update the item (preview_changes → update_item). Anyone else saves their own private version linked to the original (create_item with forked_from).
+- Other changes to their own items ("make it public", "add Sales as a team"): preview_changes with only the fields that change, then update_item (with based_on) after they say yes. Nothing can be deleted from chat.
+
+Be proactive, briefly and at most once per topic:
+- After you run a library prompt and the person corrected or refined the result, offer to fold those changes back in (start_improving).
+- When a session produced something reusable and nothing in the library covers it, offer to save it.
+- When the person starts a task the library clearly covers, mention the item.
+
+Always give links so they can open, upvote or fork. Never invent items; only use what the tools return.`;
 
 const kind = z.enum(["prompt", "skill"]).optional().describe("Only prompts or only skills");
 const app = z.string().optional().describe("Only items built for this app, e.g. Claude, Town, ChatGPT, Claygent, Granola");
 const team = z.string().optional().describe("Only items for this team, e.g. GTM, Sales, CS");
 const approved_only = z.boolean().optional().describe("Only gold standards and Enablement approved items");
+const mine = z.boolean().optional().describe("Only items the person owns or edits, private ones included. Use for \"my prompt for…\"");
 
 function text(t: string) {
   return { content: [{ type: "text" as const, text: t }] };
@@ -53,8 +67,10 @@ function promptText(l: Library, p: Prompt, values?: Record<string, string>): str
 function skillText(l: Library, p: Prompt): string {
   const files = skillFiles(p);
   const install = installNotes(l, p);
+  const cl = claudeLink(p);
   return [
     summarize(l, p),
+    cl ? `\n## Already in Claude\nThis skill is published in Claude: ${cl.url}\nTo install it in Claude, send the person to that link rather than recreating it from the files below.` : "",
     p.notes ? `\n## How to use\n${p.notes}` : "",
     p.links.length ? `\n## Open it where it lives\n${p.links.map((x) => `- ${x.label || x.url}: ${x.url}`).join("\n")}` : "",
     install.length ? `\n## Install\n${install.join("\n")}\n- Or download the .skill bundle from ${itemUrl(l, p)}` : `\n## Install\nDownload the .skill bundle from ${itemUrl(l, p)}`,
@@ -127,16 +143,16 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
     {
       title: "Search the prompt library",
       description:
-        "Ranked search over prompts and skills by what they do. Pass the task in plain words (\"recap a customer call for Slack\", \"Clay formula to score accounts\"). Returns compact cards with ids; fetch one with get_prompt or get_skill before using it.",
-      inputSchema: { query: z.string().min(1).describe("What the person wants to do"), kind, app, team, approved_only, limit: z.number().int().min(1).max(20).optional() },
+        "Ranked search over prompts and skills by what they do. Pass the task in plain words (\"recap a customer call for Slack\", \"Clay formula to score accounts\"). Gold standards and Enablement approved items that match come first. mine: true searches only the person's own items, private ones included. Returns compact cards with ids; use run_prompt to run a prompt, install_skill to install a skill.",
+      inputSchema: { query: z.string().min(1).describe("What the person wants to do"), kind, app, team, approved_only, mine, limit: z.number().int().min(1).max(20).optional() },
       annotations: readOnly,
     },
-    async ({ query, kind, app, team, approved_only, limit }) => {
+    async ({ query, kind, app, team, approved_only, mine: mineOnly, limit }) => {
       const l = await library();
-      const hits = search(l, query, { kind, app, team, approvedOnly: approved_only }, limit ?? 8);
+      const hits = search(l, query, { kind, app, team, approvedOnly: approved_only, mine: mineOnly }, limit ?? 8);
       if (!hits.length) {
         return text(
-          `Nothing in the library matches "${query}"${kind || app || team || approved_only ? " with those filters" : ""}. Try fewer words or no filters, or browse_library. If the person writes one that works, they can add it at ${l.origin}/prompts/new so the next person finds it.`,
+          `Nothing ${mineOnly ? "in your own library" : "in the library"} matches "${query}"${kind || app || team || approved_only ? " with those filters" : ""}. Try fewer words or no filters, or browse_library. If the person writes one that works, they can add it at ${l.origin}/prompts/new so the next person finds it.`,
         );
       }
       return text(
@@ -248,10 +264,140 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
   );
 
   server.registerTool(
+    "run_prompt",
+    {
+      title: "Run a prompt in this chat",
+      description:
+        "Use when the person wants to run a library prompt right here (\"run that prompt\", \"use it for Acme\"). Without all fill-ins it returns what to ask for; ask in one short message (fill what you already know from the chat first), then call again with values. With everything filled it returns the final prompt for you to carry out in this conversation.",
+      inputSchema: {
+        id: z.string().min(1).describe("Prompt id (or its clayprompts.com link)"),
+        values: z.record(z.string(), z.string()).optional().describe("Fill-in values keyed by placeholder name, e.g. {\"company\": \"Acme\"}"),
+      },
+      annotations: readOnly,
+    },
+    async ({ id, values }) => {
+      const l = await library();
+      const p = findItem(l, id);
+      if (!p) return { ...text(`No item with id ${id} that you can see. Search again with search_library.`), isError: true };
+      if (p.kind !== "prompt") return text(`"${p.title}" is a ${p.kind}, not a prompt. ${p.kind === "skill" ? "Use install_skill to set it up." : "Open it on the site."}\n\n${summarize(l, p)}`);
+      if (!p.body.trim()) return text(`"${p.title}" has no prompt text here; it lives elsewhere: ${p.links.map((x) => x.url).join(", ") || itemUrl(l, p)}`);
+      const keys = parsePlaceholders(p.body);
+      const missing = keys.filter((k) => !values?.[k]?.trim());
+      if (missing.length) {
+        return text(
+          [
+            `"${p.title}" needs ${missing.length === 1 ? "one fill-in" : `${missing.length} fill-ins`} before it can run: ${missing.map((k) => `{{${k}}}`).join(", ")}.`,
+            p.notes ? `\nHow to use (from the author):\n${p.notes}` : "",
+            `\nFill any you can from this conversation. Ask the person for the rest in one short message (a numbered list, one line each), then call run_prompt again with all values.`,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        );
+      }
+      const filled = values && keys.length ? fillBody(p.body, values) : p.body;
+      return text(
+        [
+          `Run this now: carry out the prompt below in this conversation, as if the person had just sent it. Don't show it back to them first.`,
+          p.apps.some((a) => a.model && a.required) ? `Note: the author says it needs ${p.apps.filter((a) => a.required && a.model).map((a) => `${a.app} ${a.model}`).join(", ")}.` : "",
+          `Afterwards, if they refine the result, offer once to save those improvements to the library (start_improving with id ${p.id}).`,
+          `\n---\n${filled}\n---`,
+          `\nSource: ${p.title} · ${itemUrl(l, p)}`,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      );
+    },
+  );
+
+  server.registerTool(
+    "install_skill",
+    {
+      title: "Install a skill",
+      description:
+        "Use when the person wants to install a skill from the library. Pass where they'll use it. If the skill is already published in Claude (a claude.ai link), this sends them there instead of rebuilding it. In Claude Code you'll get exact file paths to write (ask first). Elsewhere you'll get a one-click .skill download and the steps for that app.",
+      inputSchema: {
+        id: z.string().min(1).describe("Skill id (or its clayprompts.com link)"),
+        where: z.enum(["claude", "claude_code", "chatgpt", "other"]).describe("claude = Claude web, desktop or mobile; claude_code = Claude Code; chatgpt; other"),
+      },
+      annotations: readOnly,
+    },
+    async ({ id, where }) => {
+      const l = await library();
+      const p = findItem(l, id);
+      if (!p) return { ...text(`No item with id ${id} that you can see. Search again with search_library.`), isError: true };
+      if (p.kind !== "skill") return text(`"${p.title}" is a ${p.kind}, not a skill.${p.kind === "prompt" ? " Use run_prompt to run it here." : ""}`);
+      const slug = skillSlug(p.title, p.files);
+      const cl = claudeLink(p);
+      const bundle = `${l.origin}/prompts/${p.id}/skill`;
+      const install = installNotes(l, p);
+      const files = skillFiles(p);
+      if (cl && where === "claude") {
+        return text(
+          `"${p.title}" is already published in Claude, so install it from there and it stays in sync with the original: ${cl.url}\nTell the person to open that link and add the skill. Don't rebuild it from files.`,
+        );
+      }
+      if (where === "claude_code") {
+        if (!files.text.length && !files.binary.length) return text(`"${p.title}" has no files to install.${cl ? ` It lives in Claude: ${cl.url}` : ""}`);
+        return text(
+          [
+            cl ? `This skill is also published in Claude (${cl.url}). If they use Claude on the web or desktop too, suggest adding it from there.` : "",
+            `Install "${p.title}" for Claude Code by writing these files under ~/.claude/skills/${slug}/ (or .claude/skills/${slug}/ in a project, if they prefer). Ask before writing anything. After writing, tell them to restart Claude Code or run /skills to see it.`,
+            ...files.text.map((f) => `\n### ~/.claude/skills/${slug}/${f.name}${f.truncated ? " (truncated: download the bundle instead)" : ""}\n\n\`\`\`\`\n${f.content}\n\`\`\`\``),
+            files.binary.length || files.omitted.length ? `\nNot included here (${[...files.binary, ...files.omitted].join(", ")}): download the full bundle from ${bundle} and unzip it into ~/.claude/skills/.` : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        );
+      }
+      if (!p.files.length) return text(`"${p.title}" has no files to install.${p.links.length ? ` Open it where it lives: ${p.links.map((x) => x.url).join(", ")}` : ""}`);
+      return text(
+        [
+          `Install "${p.title}":`,
+          `1. Download the bundle: ${bundle} (they'll need to be signed in to ClayPrompts).`,
+          install.length ? `2. Then:\n${install.join("\n")}` : where === "claude" ? `2. In Claude, open Settings → Capabilities → Skills, choose Upload skill and pick ${slug}.skill.` : `2. Add it in their tool's skills or custom instructions settings.`,
+          `\nOffer to walk them through it, and once it's installed, to try it on something real.`,
+        ].join("\n"),
+      );
+    },
+  );
+
+  server.registerTool(
+    "start_improving",
+    {
+      title: "Improve a prompt or skill from this chat",
+      description:
+        "Use when the person wants the library item they just used to work better next time (\"learn from this chat\", \"update the prompt with what we changed\"), or when you offer after they refined a result. Returns how to fold this chat's improvements in: owners and editors update the item, anyone else saves their own linked private version. Saves nothing.",
+      inputSchema: { id: z.string().min(1).describe("The item's id (or link)") },
+      annotations: readOnly,
+    },
+    async ({ id }) => {
+      const l = await library();
+      const p = findItem(l, id);
+      if (!p) return { ...text(`No item with id ${id} that you can see.`), isError: true };
+      const own = isMine(l, p);
+      const current = p.kind === "skill" ? skillText(l, p) : promptText(l, p);
+      return text(
+        [
+          `# Improving "${p.title}" from this chat`,
+          `1. Look back at what happened after the item was used: the corrections the person made, the instructions they added, the format they settled on, what they asked you to redo. Those are the improvements. Leave out one-off specifics (names, numbers, dates); keep or add {{placeholders}} instead.`,
+          `2. Write the improved ${p.kind === "skill" ? "SKILL.md / files" : "prompt text"} in full, and say in 2–4 bullets what changed and why.`,
+          own
+            ? `3. They ${p.ownerId === l.me.id ? "own" : "edit"} this item. Call preview_changes with id ${p.id} and only the fields that change, show them the result, and call update_item (with based_on) once they say yes. The old version stays in its history.`
+            : `3. They don't own this item (${p.owner.name} does). Offer to save their own version: call preview_item with the improved text, visibility private (unless they want it public), and forked_from ${p.id} plus a short fork_note, then create_item once they say yes. It's linked to the original, so ${p.owner.name} can see the variant. Mention they can also leave feedback for the owner on the item's page.`,
+          l.enablement && p.approval.tier !== "none" ? `\nNote: this item is Enablement approved. ${own ? "Changing its content sends it back to Enablement for a re-review." : "Their own version won't carry the approval."}` : "",
+          `\n## Current version\n${current}`,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      );
+    },
+  );
+
+  server.registerTool(
     "my_library",
     {
       title: "My favorites and creations",
-      description: "Items the person created, edits, or saved to favorites on ClayPrompts.",
+      description: "Items the person created, edits, or saved to favorites on ClayPrompts, private ones included. To find one by what it does, use search_library with mine: true.",
       inputSchema: { which: z.enum(["favorites", "created", "both"]).optional().describe("Default: both") },
       annotations: readOnly,
     },
@@ -327,7 +473,7 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
     {
       title: "Save a new prompt or skill",
       description:
-        "Saves a new prompt or skill to the Clay prompt library, owned by the connected person. Only call after start_saving and preview_item, and only once the person has explicitly approved the preview, including public vs private. Returns the item's link. To change an existing item use preview_changes and update_item; deleting happens on the site.",
+        "Saves a new prompt or skill to the Clay prompt library, owned by the connected person. Only call after start_saving and preview_item, and only once the person has explicitly approved the preview, including public vs private (“my library” means private). With forked_from it saves their own version of an existing item. Returns the item's link. To change an existing item use preview_changes and update_item; deleting happens on the site.",
       inputSchema: itemShape,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },
@@ -446,7 +592,7 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
 
 Use what you know about me from memory and our past conversations: my role and team, the work I do again and again, the tools I use, what I'm working toward and what slows me down. Keep it to work-relevant facts. If you know very little about me, ask me up to three quick questions first.
 
-Then call recommend_for_me with that profile. Present the picks grouped by the part of my work they help with, one line each on why it fits me specifically, with its link. Point out any gaps nothing in the library covers yet. Finally, offer to open any of them (get_prompt / get_skill) so I can try one right now.`,
+Then call recommend_for_me with that profile. Present the picks grouped by the part of my work they help with, one line each on why it fits me specifically, with its link. Point out any gaps nothing in the library covers yet. Finally, offer to run one of the prompts right now (run_prompt) or install one of the skills (install_skill).`,
           },
         },
       ],
@@ -468,7 +614,7 @@ Then call recommend_for_me with that profile. Present the picks grouped by the p
             type: "text",
             text: `Find the best prompt or skill in the Clay prompt library for this: ${task}
 
-Call search_library, pick the one or two that genuinely fit (say so if nothing does), fetch the best one with get_prompt or get_skill, and help me use it now: fill in any {{fill-ins}} from what you know or ask me for them.`,
+Call search_library and pick the one or two that genuinely fit (say so if nothing does); Enablement approved items first when they fit. Then help me use the best one now: for a prompt, call run_prompt, fill what you can from what you know, ask me for the rest, and run it here; for a skill, call install_skill for where I work.`,
           },
         },
       ],
@@ -495,6 +641,46 @@ Call start_saving and follow its steps: draft a generalised version with {{place
         },
       ],
     }),
+  );
+
+  const ask = (t: string) => ({ messages: [{ role: "user" as const, content: { type: "text" as const, text: t } }] });
+
+  server.registerPrompt(
+    "pull_my_prompt",
+    {
+      title: "Pull one of my prompts",
+      description: "Find a prompt or skill in your own library (private ones included) and use it here.",
+      argsSchema: { what: z.string().describe("What it does, e.g. \"QBR prep\"") },
+    },
+    ({ what }) =>
+      ask(`Pull my prompt for ${what} from my Clay prompt library.
+
+Call search_library with mine: true (my own items, private ones included). If one clearly fits, open it and offer to run it here with run_prompt (or install it with install_skill if it's a skill). If several could fit, list them in one line each and ask which. If none of mine fit, say so and search the whole library instead.`),
+  );
+
+  server.registerPrompt(
+    "improve_from_this_chat",
+    {
+      title: "Improve a prompt from this chat",
+      description: "Fold what worked in this conversation back into the library prompt or skill you used.",
+      argsSchema: { item: z.string().optional().describe("Optional: the item's name or link, if it isn't obvious") },
+    },
+    ({ item }) =>
+      ask(`Learn from this chat and revise ${item ? `"${item}"` : "the library prompt or skill we used"} so it works better next time.
+
+Find the item (search_library with mine: true first if you need its id), call start_improving with it, and follow its steps: show me the improved version and what changed, then preview it and only save once I say yes.`),
+  );
+
+  server.registerPrompt(
+    "compare_my_skills",
+    {
+      title: "Compare my Claude skills with the library",
+      description: "Check the skills you already have in Claude against the Clay library: better versions, gaps, and ones worth sharing.",
+    },
+    () =>
+      ask(`Compare the skills I already have installed in Claude with the Clay prompt library.
+
+List the skills you can see in this conversation (names and one-line descriptions). For each, call search_library with kind skill to see if the library has the same or a better one, preferring Enablement approved items. Then give me three short lists: library skills that would replace or improve mine (with links, and install_skill when I want one), my skills the library doesn't have yet (offer to save them with start_saving), and library skills for my work I don't have at all. If you can't see my installed skills, ask me to name them.`),
   );
 
   return server;

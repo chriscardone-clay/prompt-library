@@ -1,24 +1,127 @@
 .main {
-  max-width: 880px;
+  max-width: 960px;
   margin: 0 auto;
-  padding: 32px 0 64px;
+  padding: 40px 0 72px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 40px;
 }
 
+/* Hero */
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 720px;
+}
+.lede {
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--fg-muted);
+  text-wrap: pretty;
+}
+.heroActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 4px;
+}
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--lime-400);
+}
+
+/* Video: Loom's own 16:10.4 box, responsive. */
+.video {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.frame {
+  position: relative;
+  padding-bottom: 64.94708994708994%;
+  height: 0;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  background: var(--bg-raised);
+  border: 1px solid var(--grey-line);
+}
+.frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+/* Use cases */
+.uses {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.use {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px;
+  border-radius: var(--radius-xl);
+  background: var(--white);
+  border: 1px solid var(--grey-line);
+}
+.useHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.useIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 10px;
+  background: var(--bg-raised);
+  color: var(--fg);
+}
+.useTitle {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+.ask {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+}
+
+/* Setup */
+.setup {
+  scroll-margin-top: 24px;
+}
 .grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
+  gap: 16px;
 }
-
-@media (max-width: 760px) {
-  .grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
 .steps {
   margin: 0;
   padding-left: 20px;
@@ -41,7 +144,6 @@
   display: flex;
   flex-direction: column;
 }
-
 .grant {
   display: flex;
   align-items: center;
@@ -50,11 +152,22 @@
   padding: 12px 0;
   border-top: 1px solid var(--border);
 }
-
 .grant:first-child {
   border-top: 0;
 }
 
-.wide {
-  grid-column: 1 / -1;
+@media (max-width: 860px) {
+  .uses {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 620px) {
+  .main {
+    padding-top: 24px;
+    gap: 32px;
+  }
+  .uses,
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

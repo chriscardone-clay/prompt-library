@@ -57,7 +57,7 @@ export function popularity(p: Prompt): number {
 
 export function relationTo(lib: Library, p: Prompt): string[] {
   const out: string[] = [];
-  if (p.ownerId === lib.me.id) out.push("you created it");
+  if (p.ownerId === lib.me.id) out.push(p.visibility === "private" ? "you created it (in your private library)" : "you created it");
   else if (p.editors.some((e) => e.id === lib.me.id || e.email === lib.me.email)) out.push("you're an editor");
   if (p.favoritedBy.includes(lib.me.id)) out.push("in your favorites");
   if (p.upvoteUserIds.includes(lib.me.id)) out.push("you upvoted it");
@@ -101,37 +101,60 @@ export interface Filters {
   team?: string;
   /** Only gold standards and Enablement approved items (current version). */
   approvedOnly?: boolean;
+  /** Only items the person owns or edits, private ones included ("pull my prompt for…"). */
+  mine?: boolean;
+}
+
+export function isMine(lib: Library, p: Prompt): boolean {
+  return p.ownerId === lib.me.id || p.editors.some((e) => e.id === lib.me.id || e.email === lib.me.email);
+}
+
+/** A link to the skill in Claude's own skills library, if it has one. Installing defers to it. */
+export function claudeLink(p: Prompt): { label: string; url: string } | undefined {
+  return p.links.find((l) => /^https:\/\/([a-z0-9-]+\.)?claude\.(ai|com)\//i.test(l.url));
 }
 
 function eq(a: string, b: string) {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
-export function applyFilters(items: Prompt[], f: Filters): Prompt[] {
+export function applyFilters(items: Prompt[], f: Filters, lib?: Library): Prompt[] {
   return items.filter(
     (p) =>
       (!f.kind || p.kind === f.kind) &&
       (!f.app || p.apps.some((a) => eq(a.app, f.app!))) &&
       (!f.team || p.audiences.some((t) => eq(t, f.team!))) &&
-      (!f.approvedOnly || approvalRank(p.approval) > 0),
+      (!f.approvedOnly || approvalRank(p.approval) > 0) &&
+      (!f.mine || (!!lib && isMine(lib, p))),
   );
 }
 
+/** Hits within this share of the best relevance count as a strong match. */
+const STRONG_MATCH = 0.6;
+
 export function search(lib: Library, query: string, f: Filters, limit: number) {
-  const pool = applyFilters(lib.items, f);
+  const pool = applyFilters(lib.items, f, lib);
   const hits = searchPrompts(pool, query, lib.catalog.apps.map((a) => a.name));
   const byId = new Map(pool.map((p) => [p.id, p]));
-  // Approval reorders what matched (same boost as Discover); it never adds non-matches.
+  const best = hits[0]?.score ?? 0;
+  // With Enablement on, a gold standard or approved item that matches strongly
+  // goes first (gold, then approved), ahead of community items; weaker
+  // matches follow by relevance plus the usual boost. Approval never adds an
+  // item that didn't match. Without the flag every approval is NO_APPROVAL.
+  const tier = (p: Prompt, score: number) => (lib.enablement && score >= best * STRONG_MATCH ? approvalRank(p.approval) : 0);
   return hits
-    .map((h) => ({ item: byId.get(h.id)!, matched: h.matched, score: h.score + approvalBoost(byId.get(h.id)!.approval) }))
-    .sort((a, b) => b.score - a.score)
+    .map((h) => {
+      const item = byId.get(h.id)!;
+      return { item, matched: h.matched, score: h.score + approvalBoost(item.approval), tier: tier(item, h.score) };
+    })
+    .sort((a, b) => b.tier - a.tier || b.score - a.score)
     .slice(0, limit);
 }
 
 export type Sort = "recommended" | "top" | "new" | "updated";
 
 export function browse(lib: Library, f: Filters, sort: Sort, limit: number, offset: number) {
-  const pool = applyFilters(lib.items, f);
+  const pool = applyFilters(lib.items, f, lib);
   const sorted = [...pool].sort((a, b) =>
     sort === "recommended"
       ? compareRecommended(a, b) || popularity(b) - popularity(a)
