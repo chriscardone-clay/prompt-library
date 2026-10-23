@@ -1,5 +1,5 @@
 import "server-only";
-import { approvalBoost, approvalRank } from "@/lib/approval";
+import { approvalBoost, approvalRank, compareOutdated, isOutdated } from "@/lib/approval";
 import { searchPrompts } from "@/lib/search";
 import type { Prompt } from "@/lib/types";
 import { type Library, popularity, relationTo } from "./library";
@@ -131,18 +131,19 @@ export function recommend(lib: Library, about: AboutMe, limit: number): Recommen
     }
     if (approvalRank(p.approval) === 2) reasons.push(`the gold standard${p.approval.useCase ? ` for ${p.approval.useCase}` : ""}`);
     else if (approvalRank(p.approval) === 1) reasons.push("Enablement approved");
+    if (isOutdated(p)) reasons.push("but Enablement flagged it as outdated");
     score += approvalBoost(p.approval);
     score += 0.03 * Math.log1p(popularity(p));
     picks.push({ item: p, score, why: reasons.join("; ") });
   }
-  picks.sort((a, b) => b.score - a.score);
+  picks.sort((a, b) => compareOutdated(a.item, b.item) || b.score - a.score);
   const chosen = picks.slice(0, limit);
 
   // Thin profile or thin matches: fill with what their team (or everyone) uses most.
   if (chosen.length < Math.min(limit, 5)) {
     const taken = new Set(chosen.map((c) => c.item.id));
     const popular = pool
-      .filter((p) => !taken.has(p.id) && popularity(p) > 0)
+      .filter((p) => !taken.has(p.id) && popularity(p) > 0 && !isOutdated(p))
       .sort((a, b) => Number(teamMatches(about.team, b)) - Number(teamMatches(about.team, a)) || popularity(b) - popularity(a));
     for (const p of popular) {
       if (chosen.length >= Math.min(limit, 5)) break;

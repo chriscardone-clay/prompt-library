@@ -40,7 +40,7 @@ async function handle(request: Request): Promise<Response> {
     );
   }
 
-  const server = buildServer(service, me, origin);
+  const server = await buildServer(service, me, origin);
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await server.connect(transport);
   try {

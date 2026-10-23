@@ -23,9 +23,18 @@ export interface Approval {
   dueAt: string | null;
   useCaseId: string | null;
   useCase: string;
+  /** Enablement flagged it as out of date: ranked last everywhere, with a warning on its page. Independent of tier. */
+  outdated: Outdated | null;
 }
 
-export const NO_APPROVAL: Approval = { tier: "none", current: false, approvedAt: null, approvedBy: null, dueAt: null, useCaseId: null, useCase: "" };
+export interface Outdated {
+  at: string;
+  by: Person | null;
+  /** What's out of date, from the reviewer. */
+  note: string;
+}
+
+export const NO_APPROVAL: Approval = { tier: "none", current: false, approvedAt: null, approvedBy: null, dueAt: null, useCaseId: null, useCase: "", outdated: null };
 
 export interface Profile {
   id: string;

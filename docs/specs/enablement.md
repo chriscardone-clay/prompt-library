@@ -20,6 +20,8 @@ Enablement keeps a **gold standard** for each common job (a *use case*, e.g. "Ac
 - **Reviews come due** after 30, 90 (default) or 180 days and show under *Due* 14 days ahead. Approval stays until a reviewer decides.
 - **Boost, not filter.** Ranking adds the boost to search relevance only after the relevance cut-off, so a gold standard never shows up for a search it doesn't match. Discover's *Recommended* sort (default with the flag) orders gold, approved, then upvotes.
 
+- **Outdated is separate from approval.** A reviewer flags an item as outdated with a note (what's wrong). It sorts after every current item in every list and search, gets no approval boost while flagged, shows a warning on its page and an Outdated tag on cards, and stops being a gold standard (it stays approved underneath). Editing the item doesn't clear the flag; a reviewer clears it, or approving the item again does. An outdated item can't be made a gold standard.
+
 ## Roles
 
 - **Owners and editors** request a review (use case, note) or withdraw one; see changes requested and notes.
@@ -31,7 +33,7 @@ Enablement keeps a **gold standard** for each common job (a *use case*, e.g. "Ac
 - Discover: badges on cards, a single Sort menu with Recommended as the default, and an Enablement facet in the filter bar (approved / gold only). No separate gold standards shelf: it competed with the results.
 - Item page: banner under the description, *Enablement review* side panel (facts, rubric, note, built-from gold standard, history), request dialog.
 - Editor: a note when editing approved content.
-- Claude connector: `- enablement:` line on every result, `approved_only` on `search_library` / `browse_library`, `recommended` sort (default with the flag), boost in search and `recommend_for_me`, instructions to prefer approved items when they fit.
+- Claude connector: `- enablement:` line on every result, `approved_only` on `search_library` / `browse_library`, `recommended` sort (default with the flag), boost in search and `recommend_for_me`, instructions to prefer approved items when they fit and to warn about outdated ones. Enablement tools: `list_use_cases`, `audit_item`, `request_review` for everyone with the flag; `review_queue`, `decide_review`, `set_gold_standard`, `create_use_case`, `flag_outdated`, `usage_report` for reviewers only (not registered for anyone else). `top_items` is for everyone, flag or not.
 - Slack assistant: candidates ordered by tier, tier shown to the model with a rule to prefer it when it fits, 🏅 / ✅ on reply cards, boost in the non-AI fallback.
 - Slack DMs to the owner (and requester) on every decision; new requests to `ENABLEMENT_SLACK_CHANNEL` when set.
 
@@ -46,3 +48,9 @@ Migration `0024_enablement_approval.sql`:
 - `prompts.approval ('none'|'approved'|'gold')`, `approval_stale`, `approved_at`, `approved_by`, `approval_due_at`, `approval_use_case`.
 - `prompt_reviews`: one row per request and decision (reason, status, tier, use case, requester, request note, reviewer, decision note, rubric, approved text snapshot for diffs). One open request per item.
 - Functions: `review_request`, `review_withdraw`, `review_decide`, `review_revoke`, `review_set_gold`. A trigger keeps approval columns read-only to everyone else, marks approvals stale on content edits and re-queues them.
+
+Migration `0027_outdated_and_connector_events.sql`:
+
+- `prompts.outdated_at`, `outdated_by`, `outdated_note`, changed only by `review_set_outdated` (a guard trigger) and cleared when `review_decide` approves. `prompt_reviews` gains statuses `outdated` / `outdated_cleared` and reason `outdated` for the history.
+- `connector_enablement(actor, action, args)`: service role only. Sets the actor's JWT claims for the transaction and calls the `review_*` function, so `can_review()`, `can_edit_prompt()` and `auth.uid()` see the person behind the MCP token.
+- `connector_events`: one row per connector tool call, readable by admins and reviewers. Views `connector_item_usage` (runs, opens, installs, people, last used per item) and `connector_search_gaps` (searches that found nothing). `connector_usage(since)` backs `top_items`.

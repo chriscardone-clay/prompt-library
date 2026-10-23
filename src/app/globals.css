@@ -50,6 +50,13 @@
   --on-danger: #ffffff;
   --danger-keep-hover: rgba(255, 255, 255, 0.6);
 
+  /* Status (Enablement banners and checks) */
+  --ok-bg: #f3f8d6;
+  --ok-fg: var(--lime-400);
+  --warn-bg: #fdf1dc;
+  --warn-fg: #7a4502;
+  --info-fg: var(--slushie-400);
+
   --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-md: 0 8px 20px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.04);
 
@@ -103,6 +110,12 @@
   --danger-ink: #ffb4ad;
   --danger-btn: #d9362a;
   --danger-keep-hover: rgba(255, 255, 255, 0.08);
+
+  --ok-bg: #1e2a0b;
+  --ok-fg: var(--lime-400);
+  --warn-bg: #36260a;
+  --warn-fg: #f2c46d;
+  --info-fg: var(--slushie-400);
 
   --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 8px 20px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.35);

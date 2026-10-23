@@ -60,6 +60,8 @@ export const NOT_READY_TONE = { bg: "#FEFAE8", fg: "#7A4502" };
 export const GOLD_TONE = { bg: "#FBE189", fg: "#4A2C00" };
 export const APPROVED_TONE = { bg: "#EEF773", fg: "#102B03" };
 export const STALE_TONE = { bg: "#F4F3F0", fg: "#66645F" };
+/** Flagged outdated by Enablement: the same amber as "not customer-ready". */
+export const OUTDATED_TONE = NOT_READY_TONE;
 
 export interface Tone {
   bg: string;

@@ -1,9 +1,10 @@
-import { ArrowsClockwise, CheckCircle, Circle, ClockCountdown, Medal, PencilSimple, ShieldCheck, XCircle } from "@phosphor-icons/react/dist/ssr";
+import { ArrowsClockwise, CheckCircle, Circle, ClockCountdown, Medal, PencilSimple, ShieldCheck, Warning, XCircle } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { approvalRank, RUBRIC, STATUS_LABELS, type ReviewStatus } from "@/lib/approval";
 import type { Review, UseCase } from "@/lib/enablement";
 import { ago } from "@/lib/format";
 import type { Prompt } from "@/lib/types";
+import { OutdatedButton } from "./OutdatedButton";
 import { RequestReviewButton, WithdrawReviewButton } from "./RequestReview";
 import styles from "./Approval.module.css";
 
@@ -28,6 +29,35 @@ export function ApprovalBanner({ prompt, reviews, editable }: Pick<Props, "promp
   const a = prompt.approval;
   const open = reviews.find((r) => r.status === "requested");
   const last = latestDecision(reviews);
+
+  // Outdated outranks everything else Enablement says about it.
+  if (a.outdated) {
+    return (
+      <div className={styles.banner} data-tone="warn" role="alert">
+        <span className={styles.bannerIcon} style={{ color: "var(--warn-fg)" }}>
+          <Warning weight="bold" size={18} />
+        </span>
+        <div className={styles.bannerText}>
+          <span className={styles.bannerTitle}>Enablement flagged this as outdated</span>
+          {a.outdated.note ? (
+            <span className={styles.quote}>
+              “{a.outdated.note}”{a.outdated.by ? ` — ${a.outdated.by.name}` : ""}
+            </span>
+          ) : null}
+          <span className="small">
+            {editable
+              ? `Flagged ${day(a.outdated.at)}. It's listed after current items until you update it and Enablement approves it again.`
+              : `Flagged ${day(a.outdated.at)}. Check the details before you use it, or look for a current item for the same job.`}
+          </span>
+        </div>
+        {editable ? (
+          <Link href={`/prompts/${prompt.id}/edit`} className="btn btn-outline btn-sm">
+            Update it
+          </Link>
+        ) : null}
+      </div>
+    );
+  }
 
   if (a.tier !== "none" && a.current) {
     const gold = a.tier === "gold";
@@ -116,10 +146,19 @@ export function ApprovalPanel({ prompt, reviews, editable, reviewer, useCases, g
   const open = reviews.find((r) => r.status === "requested");
   const history = reviews.filter((r) => r.status !== "withdrawn").slice(0, 6);
   const canRequest = editable && prompt.visibility === "public" && !open && !(a.tier !== "none" && a.current);
-  const status =
-    a.tier !== "none" ? (a.current ? (a.tier === "gold" ? "Gold standard" : "Approved") : "Re-review needed") : open ? "In review" : "Not reviewed";
+  const status = a.outdated
+    ? "Outdated"
+    : a.tier !== "none"
+      ? a.current
+        ? a.tier === "gold"
+          ? "Gold standard"
+          : "Approved"
+        : "Re-review needed"
+      : open
+        ? "In review"
+        : "Not reviewed";
 
-  if (!editable && !reviewer && a.tier === "none" && !goldParent) return null;
+  if (!editable && !reviewer && a.tier === "none" && !a.outdated && !goldParent) return null;
 
   return (
     <div className="slab" style={{ gap: 14 }} id="enablement">
@@ -221,6 +260,7 @@ export function ApprovalPanel({ prompt, reviews, editable, reviewer, useCases, g
             {open ? "Review it" : approvalRank(a) > 0 ? "Re-review or change" : "Review it now"}
           </Link>
         ) : null}
+        {reviewer ? <OutdatedButton promptId={prompt.id} title={prompt.title} outdated={!!a.outdated} gold={a.tier === "gold"} /> : null}
       </div>
     </div>
   );

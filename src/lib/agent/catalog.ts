@@ -18,6 +18,8 @@ export interface Candidate {
   /** Enablement: 2 = gold standard, 1 = approved (current version), 0 = neither or the asker lacks ENABLEMENT_APPROVED. */
   tier: 0 | 1 | 2;
   useCase: string;
+  /** Enablement flagged it as out of date (only when the asker has ENABLEMENT_APPROVED): ranked last. */
+  outdated: boolean;
 }
 
 /** Above this many public items we shortlist with search instead of sending all. */
@@ -36,11 +38,13 @@ interface Row {
   prompt_apps: { app: string; model?: string | null; model_required?: boolean | null }[] | null;
   approval?: string | null;
   approval_stale?: boolean | null;
+  outdated_at?: string | null;
   use_case?: { name: string } | null;
 }
 
 function toCandidate(r: Row, enablement: boolean): Candidate {
-  const tier = !enablement || r.approval_stale ? 0 : r.approval === "gold" ? 2 : r.approval === "approved" ? 1 : 0;
+  const outdated = enablement && !!r.outdated_at;
+  const tier = !enablement || r.approval_stale || outdated ? 0 : r.approval === "gold" ? 2 : r.approval === "approved" ? 1 : 0;
   return {
     id: r.id,
     title: r.title,
@@ -53,11 +57,12 @@ function toCandidate(r: Row, enablement: boolean): Candidate {
     updated_at: r.updated_at,
     tier,
     useCase: tier ? (r.use_case?.name ?? "") : "",
+    outdated,
   };
 }
 
 const SELECT =
-  "id, title, kind, description, notes, audiences, updated_at, approval, approval_stale, use_case:enablement_use_cases!prompts_approval_use_case_fkey ( name ), prompt_apps ( app, model, model_required )";
+  "id, title, kind, description, notes, audiences, updated_at, approval, approval_stale, outdated_at, use_case:enablement_use_cases!prompts_approval_use_case_fkey ( name ), prompt_apps ( app, model, model_required )";
 
 interface SearchHit {
   id: string;
@@ -100,8 +105,8 @@ export async function loadCandidates(client: SupabaseClient, question: string, e
   if (total <= SEND_ALL_UP_TO) {
     const { data, error } = await client.from("prompts").select(SELECT).eq("visibility", "public").neq("kind", "workflow").order("updated_at", { ascending: false });
     if (error) throw new Error(`loadCandidates: ${error.message}`);
-    // Gold standards and approved items first, so the model sees them first.
-    const items = ((data ?? []) as unknown as Row[]).map(toC).sort((a, b) => b.tier - a.tier);
+    // Gold standards and approved items first, so the model sees them first; outdated ones last.
+    const items = ((data ?? []) as unknown as Row[]).map(toC).sort((a, b) => Number(a.outdated) - Number(b.outdated) || b.tier - a.tier);
     return { items, total, shortlisted: false };
   }
 
@@ -120,7 +125,7 @@ export async function loadCandidates(client: SupabaseClient, question: string, e
     seen.add(r.id);
     items.push(toC(r));
   }
-  items.sort((a, b) => (order.get(a.id) ?? 999) - (order.get(b.id) ?? 999));
+  items.sort((a, b) => Number(a.outdated) - Number(b.outdated) || (order.get(a.id) ?? 999) - (order.get(b.id) ?? 999));
   return { items, total, shortlisted: true };
 }
 
@@ -164,9 +169,13 @@ export async function lexicalMatches(client: SupabaseClient, question: string, i
         ? "Close match on the title"
         : "Related by meaning";
     // Same approval boost as Discover, applied to matches only.
-    matches.push({ candidate: c, why: c.tier === 2 ? `${why} · gold standard` : c.tier === 1 ? `${why} · Enablement approved` : why, score: h.score + (c.tier === 2 ? GOLD_BOOST : c.tier === 1 ? APPROVED_BOOST : 0) });
+    matches.push({
+      candidate: c,
+      why: c.outdated ? `${why} · flagged outdated by Enablement` : c.tier === 2 ? `${why} · gold standard` : c.tier === 1 ? `${why} · Enablement approved` : why,
+      score: h.score + (c.tier === 2 ? GOLD_BOOST : c.tier === 1 ? APPROVED_BOOST : 0),
+    });
   }
-  matches.sort((a, b) => b.score - a.score);
+  matches.sort((a, b) => Number(a.candidate.outdated) - Number(b.candidate.outdated) || b.score - a.score);
   matches.splice(limit);
   return { matches, intent, understood: intent.words.join(" "), suggestion: matches.length ? undefined : suggestTitle(intent) };
 }
@@ -181,6 +190,7 @@ export function describeCandidates(items: Candidate[]): string {
         c.models.length ? `models: ${c.models.map((m) => `${m.app} ${m.model}${m.required ? " (required)" : " (recommended)"}`).join("; ")}` : null,
         c.audiences.length ? `teams: ${c.audiences.join(", ")}` : null,
         c.tier === 2 ? `GOLD STANDARD${c.useCase ? ` for ${c.useCase}` : ""} (Enablement)` : c.tier === 1 ? "Enablement approved" : null,
+        c.outdated ? "OUTDATED (flagged by Enablement)" : null,
       ].filter(Boolean);
       const notes = c.notes ? ` Notes: ${c.notes.replace(/\s+/g, " ").slice(0, 240)}` : "";
       return `${i + 1}. [${c.id}] ${c.title} — ${bits.join(" · ")}. ${c.description.replace(/\s+/g, " ")}${notes}`;

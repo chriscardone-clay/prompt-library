@@ -12,7 +12,10 @@ import { itemShape, prepare, previewText, saveItem } from "./create";
 import { editPreviewText, editShape, prepareEdit, saveEdit } from "./edit";
 import { itemUrl } from "./library";
 import { type McpUser, WRITE_SCOPE } from "./oauth";
+import { isReviewerEmail, registerEnablementTools } from "./enablement";
 import { recommend } from "./recommend";
+import { type Event, tracker } from "./track";
+import { featureOn } from "@/lib/flags";
 
 const INSTRUCTIONS = `Clay's internal prompt library (ClayPrompts): prompts (text you paste into Claude, ChatGPT, Town, Claygent, Monty, Granola…), skills (SKILL.md bundles installed into a tool) and workflows, written by people at Clay and reviewed by Enablement. Think of it as the person's own repository of what works, shared with their team.
 
@@ -20,6 +23,8 @@ Finding
 - For a task, call search_library with the task in plain words; browse_library lists by app, team or popularity.
 - "My prompt for X", "pull my …", "the one I saved": search_library with mine: true. That covers their private items too.
 - Items marked "Gold standard" or "Enablement approved" were reviewed by Clay's Enablement team and come first in results. When one fits, recommend it first and say Enablement recommends it. Only pass over it for a clearly better fit.
+- Items marked OUTDATED were flagged by Enablement as out of date and are listed last. Don't recommend one when anything current fits; if the person still uses it, tell them it's flagged and why.
+- "Top prompts", "what's popular", "most used": top_items.
 
 Using
 - "Run that prompt", "use it": call run_prompt. Ask for every missing fill-in in one short message (use what you already know from the chat first), call run_prompt again with the values, then carry out the returned prompt right here in the conversation.
@@ -34,6 +39,11 @@ Be proactive, briefly and at most once per topic:
 - After you run a library prompt and the person corrected or refined the result, offer to fold those changes back in (start_improving).
 - When a session produced something reusable and nothing in the library covers it, offer to save it.
 - When the person starts a task the library clearly covers, mention the item.
+
+Enablement (only when those tools are listed)
+- "Help me audit this prompt": audit_item, then go through the rubric with the person and give a verdict per item.
+- "Get this approved" from an owner who isn't a reviewer: request_review.
+- Reviewers: review_queue ("pending enablement review"), decide_review ("approve this"), set_gold_standard, create_use_case ("add a gold standard use case"), flag_outdated, usage_report, list_use_cases. Audit before deciding, and only save a decision, gold standard, use case or outdated flag after the person explicitly confirms it, with the note the owner will see.
 
 Always give links so they can open, upvote or fork. Never invent items; only use what the tools return.`;
 
@@ -129,14 +139,25 @@ Saving as: ${l.me.name} <${l.me.email}>.`;
 
 /**
  * One server per request (stateless). The library is read lazily and at most
- * once per request, as the person behind the token.
+ * once per request, as the person behind the token. The Enablement flag and
+ * reviewer status are read up front, since they decide which tools exist.
+ * Every tool call is recorded in connector_events (track.ts).
  */
-export function buildServer(service: SupabaseClient, me: McpUser, origin: string): McpServer {
+export async function buildServer(service: SupabaseClient, me: McpUser, origin: string): Promise<McpServer> {
+  const [enablement, reviewer] = await Promise.all([
+    featureOn("enablement", { id: me.id, email: me.email }).catch(() => false),
+    isReviewerEmail(service, me.email).catch(() => false),
+  ]);
   let lib: Promise<Library> | null = null;
-  const library = () => (lib ??= loadLibrary(service, me, origin));
+  const library = () => (lib ??= loadLibrary(service, me, origin, enablement));
+  const traced = tracker(service, me);
 
   const server = new McpServer({ name: "clay-prompt-library", title: "Clay prompt library", version: "1.0.0" }, { instructions: INSTRUCTIONS });
   const readOnly = { readOnlyHint: true, openWorldHint: false } as const;
+  const notFound = (ev: Event, id: string) => {
+    ev.outcome = "not_found";
+    return { ...text(`No item with id ${id} that you can see. Search again with search_library.`), isError: true };
+  };
 
   server.registerTool(
     "search_library",
@@ -147,10 +168,15 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
       inputSchema: { query: z.string().min(1).describe("What the person wants to do"), kind, app, team, approved_only, mine, limit: z.number().int().min(1).max(20).optional() },
       annotations: readOnly,
     },
-    async ({ query, kind, app, team, approved_only, mine: mineOnly, limit }) => {
+    traced("search_library", "search", async ({ query, kind, app, team, approved_only, mine: mineOnly, limit }, ev) => {
       const l = await library();
       const hits = search(l, query, { kind, app, team, approvedOnly: approved_only, mine: mineOnly }, limit ?? 8);
+      ev.query = query;
+      ev.filters = { kind, app, team, approved_only, mine: mineOnly };
+      ev.resultIds = hits.map((h) => h.item.id);
+      ev.resultCount = hits.length;
       if (!hits.length) {
+        ev.outcome = "empty";
         return text(
           `Nothing ${mineOnly ? "in your own library" : "in the library"} matches "${query}"${kind || app || team || approved_only ? " with those filters" : ""}. Try fewer words or no filters, or browse_library. If the person writes one that works, they can add it at ${l.origin}/prompts/new so the next person finds it.`,
         );
@@ -158,7 +184,7 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
       return text(
         [`${hits.length} result${hits.length === 1 ? "" : "s"} for "${query}", best first:`, ...hits.map((h) => summarize(l, h.item, h.matched.length ? `matches ${h.matched.slice(0, 5).join(", ")}` : undefined))].join("\n\n"),
       );
-    },
+    }),
   );
 
   server.registerTool(
@@ -178,15 +204,21 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
       },
       annotations: readOnly,
     },
-    async ({ kind, app, team, approved_only, sort, limit, offset }) => {
+    traced("browse_library", "browse", async ({ kind, app, team, approved_only, sort, limit, offset }, ev) => {
       const l = await library();
       const n = limit ?? 15;
       const from = offset ?? 0;
       const { total, page } = browse(l, { kind, app, team, approvedOnly: approved_only }, sort ?? (l.enablement ? "recommended" : "top"), n, from);
-      if (!total) return text("No items match those filters. Call list_catalog to see the app and team names in use.");
+      ev.filters = { kind, app, team, approved_only, sort, offset: from || undefined };
+      ev.resultIds = page.map((p) => p.id);
+      ev.resultCount = total;
+      if (!total) {
+        ev.outcome = "empty";
+        return text("No items match those filters. Call list_catalog to see the app and team names in use.");
+      }
       const more = from + page.length < total ? `\n\n${total - from - page.length} more: call again with offset ${from + page.length}.` : "";
       return text([`${total} item${total === 1 ? "" : "s"}; showing ${from + 1}–${from + page.length}:`, ...page.map((p) => summarize(l, p))].join("\n\n") + more);
-    },
+    }),
   );
 
   server.registerTool(
@@ -201,12 +233,14 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
       },
       annotations: readOnly,
     },
-    async ({ id, values }) => {
+    traced("get_prompt", "view", async ({ id, values }, ev) => {
       const l = await library();
       const p = findItem(l, id);
-      if (!p) return { ...text(`No item with id ${id} that you can see. Search again with search_library.`), isError: true };
+      if (!p) return notFound(ev, id);
+      ev.promptId = p.id;
+      ev.detail = { kind: p.kind, filled: values ? Object.keys(values).filter((k) => values[k]?.trim()) : undefined };
       return text(promptText(l, p, values));
-    },
+    }),
   );
 
   server.registerTool(
@@ -218,13 +252,15 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
       inputSchema: { id: z.string().min(1).describe("Skill id (or its clayprompts.com link)") },
       annotations: readOnly,
     },
-    async ({ id }) => {
+    traced("get_skill", "view", async ({ id }, ev) => {
       const l = await library();
       const p = findItem(l, id);
-      if (!p) return { ...text(`No item with id ${id} that you can see. Search again with search_library.`), isError: true };
+      if (!p) return notFound(ev, id);
+      ev.promptId = p.id;
+      ev.detail = { kind: p.kind };
       if (p.kind !== "skill") return text(`That's a prompt, not a skill. Use get_prompt.\n\n${summarize(l, p)}`);
       return text(skillText(l, p));
-    },
+    }),
   );
 
   server.registerTool(
@@ -244,9 +280,14 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
       },
       annotations: readOnly,
     },
-    async ({ limit, ...about }) => {
+    traced("recommend_for_me", "recommend", async ({ limit, ...about }, ev) => {
       const l = await library();
       const r = recommend(l, about, limit ?? 8);
+      // Never the profile itself (the description promises it isn't stored): which fields were given, and counts.
+      ev.resultIds = r.picks.map((p) => p.item.id);
+      ev.resultCount = r.picks.length;
+      ev.detail = { profile_fields: Object.keys(about).filter((k) => about[k as keyof typeof about]?.length), gaps: r.gaps.length, skipped: r.skipped.length };
+      if (!r.picks.length) ev.outcome = "empty";
       const parts: string[] = [];
       if (r.picks.length) {
         parts.push(`${r.picks.length} pick${r.picks.length === 1 ? "" : "s"} for this person, best first:`);
@@ -260,7 +301,7 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
         parts.push("\nThe profile had no recurring work, goals or pain points, so these are mostly popular picks. Ask what they spend their week on for sharper recommendations.");
       }
       return text(parts.join("\n\n"));
-    },
+    }),
   );
 
   server.registerTool(
@@ -275,15 +316,25 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
       },
       annotations: readOnly,
     },
-    async ({ id, values }) => {
+    traced("run_prompt", "run", async ({ id, values }, ev) => {
       const l = await library();
       const p = findItem(l, id);
-      if (!p) return { ...text(`No item with id ${id} that you can see. Search again with search_library.`), isError: true };
-      if (p.kind !== "prompt") return text(`"${p.title}" is a ${p.kind}, not a prompt. ${p.kind === "skill" ? "Use install_skill to set it up." : "Open it on the site."}\n\n${summarize(l, p)}`);
-      if (!p.body.trim()) return text(`"${p.title}" has no prompt text here; it lives elsewhere: ${p.links.map((x) => x.url).join(", ") || itemUrl(l, p)}`);
+      if (!p) return notFound(ev, id);
+      ev.promptId = p.id;
+      if (p.kind !== "prompt") {
+        ev.outcome = "not_found";
+        return text(`"${p.title}" is a ${p.kind}, not a prompt. ${p.kind === "skill" ? "Use install_skill to set it up." : "Open it on the site."}\n\n${summarize(l, p)}`);
+      }
+      if (!p.body.trim()) {
+        ev.detail = { link_only: true };
+        return text(`"${p.title}" has no prompt text here; it lives elsewhere: ${p.links.map((x) => x.url).join(", ") || itemUrl(l, p)}`);
+      }
       const keys = parsePlaceholders(p.body);
       const missing = keys.filter((k) => !values?.[k]?.trim());
+      // Fill-in names only, never their values.
+      ev.detail = { fillins: keys.length, filled: keys.filter((k) => values?.[k]?.trim()), missing, approval: p.approval.tier, outdated: !!p.approval.outdated || undefined };
       if (missing.length) {
+        ev.outcome = "needs_input";
         return text(
           [
             `"${p.title}" needs ${missing.length === 1 ? "one fill-in" : `${missing.length} fill-ins`} before it can run: ${missing.map((k) => `{{${k}}}`).join(", ")}.`,
@@ -298,6 +349,7 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
       return text(
         [
           `Run this now: carry out the prompt below in this conversation, as if the person had just sent it. Don't show it back to them first.`,
+          p.approval.outdated ? `Enablement flagged this prompt as outdated${p.approval.outdated.note ? ` ("${p.approval.outdated.note}")` : ""}. Tell the person in one line before the result, and offer to look for a current one (search_library).` : "",
           p.apps.some((a) => a.model && a.required) ? `Note: the author says it needs ${p.apps.filter((a) => a.required && a.model).map((a) => `${a.app} ${a.model}`).join(", ")}.` : "",
           `Afterwards, if they refine the result, offer once to save those improvements to the library (start_improving with id ${p.id}).`,
           `\n---\n${filled}\n---`,
@@ -306,7 +358,7 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
           .filter(Boolean)
           .join("\n"),
       );
-    },
+    }),
   );
 
   server.registerTool(
@@ -321,10 +373,13 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
       },
       annotations: readOnly,
     },
-    async ({ id, where }) => {
+    traced("install_skill", "install", async ({ id, where }, ev) => {
       const l = await library();
       const p = findItem(l, id);
-      if (!p) return { ...text(`No item with id ${id} that you can see. Search again with search_library.`), isError: true };
+      if (!p) return notFound(ev, id);
+      ev.promptId = p.id;
+      ev.detail = { where, outdated: !!p.approval.outdated || undefined };
+      if (p.kind !== "skill") ev.outcome = "not_found";
       if (p.kind !== "skill") return text(`"${p.title}" is a ${p.kind}, not a skill.${p.kind === "prompt" ? " Use run_prompt to run it here." : ""}`);
       const slug = skillSlug(p.title, p.files);
       const cl = claudeLink(p);
@@ -358,7 +413,7 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
           `\nOffer to walk them through it, and once it's installed, to try it on something real.`,
         ].join("\n"),
       );
-    },
+    }),
   );
 
   server.registerTool(
@@ -370,11 +425,13 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
       inputSchema: { id: z.string().min(1).describe("The item's id (or link)") },
       annotations: readOnly,
     },
-    async ({ id }) => {
+    traced("start_improving", "improve", async ({ id }, ev) => {
       const l = await library();
       const p = findItem(l, id);
-      if (!p) return { ...text(`No item with id ${id} that you can see.`), isError: true };
+      if (!p) return notFound(ev, id);
       const own = isMine(l, p);
+      ev.promptId = p.id;
+      ev.detail = { own };
       const current = p.kind === "skill" ? skillText(l, p) : promptText(l, p);
       return text(
         [
@@ -390,7 +447,7 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
           .filter(Boolean)
           .join("\n"),
       );
-    },
+    }),
   );
 
   server.registerTool(
@@ -401,16 +458,17 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
       inputSchema: { which: z.enum(["favorites", "created", "both"]).optional().describe("Default: both") },
       annotations: readOnly,
     },
-    async ({ which }) => {
+    traced("my_library", "browse", async ({ which }, ev) => {
       const l = await library();
       const w = which ?? "both";
+      ev.filters = { mine: true, which: w };
       const fav = l.items.filter((p) => p.favoritedBy.includes(me.id));
       const mine = l.items.filter((p) => p.ownerId === me.id || p.editors.some((e) => e.id === me.id || e.email === me.email));
       const sections: string[] = [];
       if (w !== "created") sections.push(`## Favorites (${fav.length})\n\n${fav.map((p) => summarize(l, p)).join("\n\n") || "None yet."}`);
       if (w !== "favorites") sections.push(`## Created or editing (${mine.length})\n\n${mine.map((p) => summarize(l, p)).join("\n\n") || "None yet."}`);
       return text(sections.join("\n\n"));
-    },
+    }),
   );
 
   server.registerTool(
@@ -421,7 +479,7 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
       inputSchema: {},
       annotations: readOnly,
     },
-    async () => {
+    traced("list_catalog", "other", async (_args, ev) => {
       const l = await library();
       const count = (f: (p: (typeof l.items)[number]) => boolean) => l.items.filter(f).length;
       const apps = activeApps(l.catalog).map(
@@ -430,15 +488,19 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
       const teams = activeTeams(l.catalog).map((t) => `- ${t.name} (${count((p) => p.audiences.includes(t.name))})`);
       const prompts = count((p) => p.kind === "prompt");
       return text(`${l.items.length} items you can see: ${prompts} prompts, ${l.items.length - prompts} skills.\n\n## Apps\n${apps.join("\n")}\n\n## Teams\n${teams.join("\n")}`);
-    },
+    }),
   );
 
   // ── Saving to the library ──────────────────────────────────────────
   const canWrite = me.scope.split(" ").includes(WRITE_SCOPE);
   const reconnect = () => ({
     ...text("This connection can only read the library. Disconnect it on ClayPrompts (Connect to Claude or ChatGPT in the account menu) and connect again to allow saving."),
-    isError: true,
+    isError: true as const,
   });
+  const denied = (ev: Event) => {
+    ev.outcome = "denied";
+    return reconnect();
+  };
 
   server.registerTool(
     "start_saving",
@@ -449,7 +511,10 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
       inputSchema: {},
       annotations: readOnly,
     },
-    async () => text(savingGuide(await library())),
+    traced("start_saving", "save", async (_args, ev) => {
+      ev.detail = { step: "guide" };
+      return text(savingGuide(await library()));
+    }),
   );
 
   server.registerTool(
@@ -461,11 +526,13 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
       inputSchema: itemShape,
       annotations: readOnly,
     },
-    async (input) => {
+    traced("preview_item", "save", async (input, ev) => {
       const l = await library();
       const p = prepare(l, input);
+      ev.detail = { step: "preview", kind: input.kind, visibility: input.visibility, forked_from: input.forked_from, ok: p.ok, warnings: p.warnings.length };
+      if (input.forked_from) ev.promptId = input.forked_from;
       return p.ok ? text(`${previewText(p)}\n\nNot saved yet. Ask the person to confirm, then call create_item with the same fields.`) : { ...text(previewText(p)), isError: true };
-    },
+    }),
   );
 
   server.registerTool(
@@ -477,12 +544,14 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
       inputSchema: itemShape,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },
-    async (input) => {
-      if (!canWrite) return reconnect();
+    traced("create_item", "save", async (input, ev) => {
+      if (!canWrite) return denied(ev);
       const l = await library();
       const p = prepare(l, input);
       if (!p.ok) return { ...text(previewText(p)), isError: true };
       const saved = await saveItem(service, l, p);
+      ev.promptId = saved.id;
+      ev.detail = { step: "create", kind: p.draft!.kind, visibility: p.draft!.visibility, forked_from: input.forked_from, duplicate: saved.duplicate || undefined };
       const url = `${l.origin}/prompts/${saved.id}`;
       const d = p.draft!;
       return text(
@@ -490,7 +559,7 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
           ? `You already saved "${d.title}" a few minutes ago, so nothing new was created: ${url}`
           : `Saved "${d.title}" as a ${d.visibility} ${d.kind}: ${url}${p.warnings.length ? `\n\nSaved with these notes (fix them on the site if needed):\n${p.warnings.map((w) => `- ${w}`).join("\n")}` : ""}\n\nShare the link. They can open it to review it, add links or binary files, invite editors, or change anything; ${d.visibility === "public" ? "it shows up in search and next week's Slack digest" : "only they and editors can see it until they make it public"}.`,
       );
-    },
+    }),
   );
 
   server.registerTool(
@@ -502,13 +571,15 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
       inputSchema: editShape,
       annotations: readOnly,
     },
-    async (input) => {
+    traced("preview_changes", "edit", async (input, ev) => {
       const l = await library();
       const p = prepareEdit(l, input);
       const body = editPreviewText(l, p);
+      ev.promptId = p.item?.id ?? null;
+      ev.detail = { step: "preview", ok: p.ok, changes: p.changes.length };
       if (!p.ok) return { ...text(body), isError: true };
       return text(p.changes.length ? `${body}\n\nNot saved yet. Ask the person to confirm, then call update_item with the same fields and based_on.` : body);
-    },
+    }),
   );
 
   server.registerTool(
@@ -520,17 +591,21 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
       inputSchema: editShape,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
-    async (input) => {
-      if (!canWrite) return reconnect();
+    traced("update_item", "edit", async (input, ev) => {
+      if (!canWrite) return denied(ev);
       const l = await library();
       const p = prepareEdit(l, input);
+      ev.promptId = p.item?.id ?? null;
+      ev.detail = { step: "update", changes: p.changes.length };
       if (!p.ok) return { ...text(editPreviewText(l, p)), isError: true };
       if (!p.changes.length) return text(editPreviewText(l, p));
       const saved = await saveEdit(service, l, p, input.based_on);
       if (!saved.ok) return { ...text(`Not saved: ${saved.error}`), isError: true };
       return text(`Saved changes to "${p.draft!.title}": ${l.origin}/prompts/${p.item!.id}\n${p.changes.map((c) => `- ${c}`).join("\n")}${p.warnings.length ? `\n\nNotes:\n${p.warnings.map((w) => `- ${w}`).join("\n")}` : ""}\n\nThe previous version is in its version history on the site if they want it back.`);
-    },
+    }),
   );
+
+  registerEnablementTools(server, { service, me, library, traced, enablement, reviewer, canWrite, reconnect });
 
   // ── ChatGPT compatibility (deep research / company knowledge) ────────
   // OpenAI's documented shapes: search(query) → { results: [{ id, title, url }] },
@@ -544,12 +619,16 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
       outputSchema: { results: z.array(z.object({ id: z.string(), title: z.string(), url: z.string() })) },
       annotations: readOnly,
     },
-    async ({ query }) => {
+    traced("search", "search", async ({ query }, ev) => {
       const l = await library();
       const results = search(l, query, {}, 10).map((h) => ({ id: h.item.id, title: h.item.title, url: itemUrl(l, h.item) }));
+      ev.query = query;
+      ev.resultIds = results.map((r) => r.id);
+      ev.resultCount = results.length;
+      if (!results.length) ev.outcome = "empty";
       const out = { results };
       return { structuredContent: out, content: [{ type: "text" as const, text: JSON.stringify(out) }] };
-    },
+    }),
   );
 
   server.registerTool(
@@ -561,10 +640,11 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
       outputSchema: { id: z.string(), title: z.string(), text: z.string(), url: z.string(), metadata: z.record(z.string(), z.string()).optional() },
       annotations: readOnly,
     },
-    async ({ id }) => {
+    traced("fetch", "view", async ({ id }, ev) => {
       const l = await library();
       const p = findItem(l, id);
-      if (!p) return { ...text(`No item with id ${id} that you can see.`), isError: true };
+      if (!p) return notFound(ev, id);
+      ev.promptId = p.id;
       const out = {
         id: p.id,
         title: p.title,
@@ -573,7 +653,7 @@ export function buildServer(service: SupabaseClient, me: McpUser, origin: string
         metadata: { kind: p.kind, apps: p.apps.map((a) => a.app).join(", "), teams: p.audiences.join(", "), owner: p.owner.name, updated: p.updatedAt.slice(0, 10) },
       };
       return { structuredContent: out, content: [{ type: "text" as const, text: JSON.stringify(out) }] };
-    },
+    }),
   );
 
   server.registerPrompt(

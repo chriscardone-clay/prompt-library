@@ -79,6 +79,7 @@ Rules:
 - Precision over recall: 1 to 5 picks that genuinely fit. If nothing fits, return no picks and say so in one sentence, then suggest what they could add to the library.
 - Explain each pick for this person: use what you know about them (their teams, the apps they use, what they've created or saved) when it's relevant. Keep each reason to one sentence.
 - Items marked GOLD STANDARD or ENABLEMENT APPROVED were reviewed by Clay's Enablement team. When one fits, put it first and say Enablement recommends it. Never pick one that doesn't fit over one that does.
+- Items marked OUTDATED were flagged by Enablement as out of date. Only pick one when nothing current fits, and then say it's flagged as outdated.
 - Kinds: a prompt is text to paste into a tool; a skill is a bundle installed into Claude or ChatGPT; a workflow is a Clay Workflows reference architecture. Mention the kind when it helps them choose.
 - Items marked YOURS are ones they created or edit; FAVORITE are ones they saved. Point those out when they come up, but don't favour them over a better fit.
 - If the ask is too vague to search, return no picks and ask one short clarifying question.
@@ -125,7 +126,7 @@ function viewingBlock(p: Prompt): string {
     p.description ? `Description: ${p.description}` : "",
     p.apps.length ? `Works in: ${p.apps.map((a) => `${a.app}${a.surfaces.length ? ` (${a.surfaces.join(", ")})` : ""}${a.model ? `, ${a.required ? "requires" : "recommended"} ${a.model}` : ""}`).join("; ")}` : "",
     p.audiences.length ? `Teams: ${p.audiences.join(", ")}` : "",
-    `Owner: ${p.owner.name} · ${p.visibility} · ${p.upvoteUserIds.length} upvotes${approvalRank(p.approval) === 2 ? " · GOLD STANDARD" : approvalRank(p.approval) === 1 ? " · ENABLEMENT APPROVED" : ""}`,
+    `Owner: ${p.owner.name} · ${p.visibility} · ${p.upvoteUserIds.length} upvotes${approvalRank(p.approval) === 2 ? " · GOLD STANDARD" : approvalRank(p.approval) === 1 ? " · ENABLEMENT APPROVED" : ""}${p.approval.outdated ? ` · OUTDATED (Enablement: ${p.approval.outdated.note || "no note"})` : ""}`,
     p.notes ? `How to use (from the author):\n${p.notes}` : "",
     p.links.length ? `Links: ${p.links.map((l) => `${l.label || l.url} <${l.url}>`).join("; ")}` : "",
     p.kind === "workflow" ? `Workflow: trigger ${p.workflow.trigger || "unset"}, integrations ${p.workflow.integrations.join(", ") || "none"}${p.workflow.customerReady ? ", customer-ready" : ""}` : "",
@@ -148,6 +149,7 @@ function line(p: Prompt, me: Profile): string {
     p.ownerId === me.id || p.editors.some((e) => e.id === me.id || e.email.toLowerCase() === me.email.toLowerCase()) ? "YOURS" : "",
     p.favoritedBy.includes(me.id) ? "FAVORITE" : "",
     p.visibility === "private" ? "private" : "",
+    p.approval.outdated ? "OUTDATED" : "",
   ].filter(Boolean);
   const detail = [
     p.description,
@@ -191,7 +193,7 @@ function candidates(items: Prompt[], turns: Turn[], appNames: string[]): Prompt[
   const keep = new Set<string>();
   for (const h of searchPrompts(items, asked, appNames).slice(0, SHORTLIST)) keep.add(h.id);
   for (const t of turns) for (const id of t.picks ?? []) keep.add(id);
-  for (const p of [...items].sort((a, b) => approvalRank(b.approval) - approvalRank(a.approval) || b.upvoteUserIds.length - a.upvoteUserIds.length).slice(0, POPULAR_EXTRA)) keep.add(p.id);
+  for (const p of [...items].sort((a, b) => Number(!!a.approval.outdated) - Number(!!b.approval.outdated) || approvalRank(b.approval) - approvalRank(a.approval) || b.upvoteUserIds.length - a.upvoteUserIds.length).slice(0, POPULAR_EXTRA)) keep.add(p.id);
   return [...keep].map((id) => byId.get(id)).filter((p): p is Prompt => !!p);
 }
 
