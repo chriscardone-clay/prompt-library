@@ -567,3 +567,52 @@ html[data-embedded] .container {
     font-size: max(16px, 1em) !important;
   }
 }
+
+/* Tooltips: data-tip="…" on any element. Shown on hover and keyboard focus,
+   after a short delay, anchored to the left edge (data-tip-end anchors right). */
+[data-tip] {
+  position: relative;
+}
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 60;
+  width: max-content;
+  max-width: 260px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--fg);
+  color: var(--bg);
+  box-shadow: var(--shadow-md);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: normal;
+  text-transform: none;
+  text-align: left;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(2px);
+  transition: opacity 120ms var(--ease), transform 120ms var(--ease), visibility 0s linear 120ms;
+}
+[data-tip-end]::after {
+  left: auto;
+  right: 0;
+}
+[data-tip]:hover::after,
+[data-tip]:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition-delay: 250ms;
+}
+@media (hover: none) {
+  [data-tip]::after {
+    display: none;
+  }
+}

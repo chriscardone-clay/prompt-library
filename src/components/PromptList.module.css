@@ -186,6 +186,17 @@
   flex-wrap: wrap;
 }
 
+/* Badges and icons with tooltips sit above the title link's whole-card overlay so they can be hovered. */
+.cardTags > [data-tip] {
+  z-index: 1;
+}
+.tipIcon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--fg-muted);
+  padding: 2px;
+}
+
 .cardBody {
   display: flex;
   flex-direction: column;

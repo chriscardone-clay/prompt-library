@@ -41,7 +41,8 @@ export function FavoriteButton({ promptId, favorited, variant = "icon" }: Props)
       onClick={toggle}
       aria-pressed={on}
       aria-label={on ? "Remove from favorites" : "Save to favorites"}
-      title={on ? "Remove from favorites" : "Save to favorites"}
+      data-tip={on ? "Saved to your Favorites. Click to remove" : "Save to your Favorites (only you see them)"}
+      data-tip-end=""
       className={variant === "pill" ? styles.pill : styles.icon}
       data-on={on ? "" : undefined}
     >

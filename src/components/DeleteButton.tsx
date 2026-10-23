@@ -32,10 +32,10 @@ export function DeleteButton({ promptId, title, returnHref }: Props) {
       if (wrap.current && !wrap.current.contains(e.target as Node)) setConfirming(false);
     };
     document.addEventListener("keydown", onKey);
-    document.addEventListener("mousedown", onDown);
+    document.addEventListener("pointerdown", onDown);
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("pointerdown", onDown);
     };
   }, [confirming]);
 

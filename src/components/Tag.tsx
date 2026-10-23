@@ -22,7 +22,7 @@ export function appLabel(a: PromptApp): string {
 /** App tag in the app's catalog colours (100 tint background, 400 ink; derived in dark mode). */
 export function AppTag({ app, tone = FALLBACK_TONE, short = false }: { app: PromptApp; tone?: Tone; short?: boolean }) {
   return (
-    <span className="tag tone" style={toneStyle(tone)} title={short && app.surfaces.length ? appLabel(app) : undefined}>
+    <span className="tag tone" style={toneStyle(tone)} data-tip={`Built for ${appLabel(app)}`}>
       {short ? app.app : appLabel(app)}
     </span>
   );
@@ -34,7 +34,7 @@ export function AudienceTag({ audience, light }: { audience: string; light?: boo
 
 export function SkillTag() {
   return (
-    <span className="tag" style={{ background: "var(--fg)", color: "var(--oat-100)" }}>
+    <span className="tag" style={{ background: "var(--fg)", color: "var(--oat-100)" }} data-tip="Skill: a SKILL.md bundle you install into Claude or ChatGPT so it follows the same steps every time">
       <Files weight="bold" size={11} />
       Skill
     </span>
@@ -43,7 +43,7 @@ export function SkillTag() {
 
 export function ForkTag() {
   return (
-    <span className="tag tag-light tag-muted" title="Forked prompt">
+    <span className="tag tag-light tag-muted" data-tip="Fork: someone's own version of another item">
       <GitFork weight="bold" size={11} />
       Fork
     </span>
@@ -52,7 +52,7 @@ export function ForkTag() {
 
 export function PrivateTag() {
   return (
-    <span className="tag tag-muted">
+    <span className="tag tag-muted" data-tip="Private: only the owner and editors can see it">
       <LockSimple weight="bold" size={11} />
       Private
     </span>
@@ -61,7 +61,7 @@ export function PrivateTag() {
 
 export function WorkflowTag() {
   return (
-    <span className="tag tone" style={toneStyle(WORKFLOW_TONE)}>
+    <span className="tag tone" style={toneStyle(WORKFLOW_TONE)} data-tip="Workflow: a Clay Workflows reference architecture you can adapt">
       <FlowArrow weight="bold" size={11} />
       Workflow
     </span>
@@ -71,7 +71,7 @@ export function WorkflowTag() {
 /** "Reference architecture" for an original workflow, "Adaptation" for a fork. */
 export function OriginTag({ adapted }: { adapted: boolean }) {
   return (
-    <span className="tag tone" style={toneStyle(adapted ? ADAPTATION_TONE : REFERENCE_TONE)}>
+    <span className="tag tone" style={toneStyle(adapted ? ADAPTATION_TONE : REFERENCE_TONE)} data-tip={adapted ? "Adaptation: a reference architecture tailored for a specific customer or use" : "Reference architecture: the original design others adapt"}>
       {adapted ? "Adaptation" : "Reference architecture"}
     </span>
   );
@@ -90,7 +90,7 @@ export function StageTag({ stage }: { stage: WorkflowStage | "" }) {
 export function ReadyTag({ ready, showNotReady = false }: { ready: boolean; showNotReady?: boolean }) {
   if (!ready && !showNotReady) return null;
   return (
-    <span className="tag tone" style={toneStyle(ready ? READY_TONE : NOT_READY_TONE)}>
+    <span className="tag tone" style={toneStyle(ready ? READY_TONE : NOT_READY_TONE)} data-tip={ready ? "Customer-ready: checked for internal details, safe to share with customers" : "Not customer-ready yet: may contain internal details"}>
       {ready ? <CheckCircle weight="bold" size={11} /> : null}
       {ready ? "Customer-ready" : "Not customer-ready"}
     </span>
@@ -112,7 +112,7 @@ export function ApprovalTag({ approval, short = false }: { approval: Approval; s
   if (approval.tier === "none") return null;
   if (!approval.current) {
     return (
-      <span className="tag tone" style={toneStyle(STALE_TONE)} title="Enablement approved an earlier version. It has changed since.">
+      <span className="tag tone" style={toneStyle(STALE_TONE)} data-tip="Enablement approved an earlier version. It has changed since, so it isn't boosted until it's reviewed again.">
         <ArrowsClockwise weight="bold" size={11} />
         {short ? "Earlier version approved" : "Approved earlier version"}
       </span>
@@ -123,7 +123,7 @@ export function ApprovalTag({ approval, short = false }: { approval: Approval; s
     <span
       className="tag tone"
       style={toneStyle(gold ? GOLD_TONE : APPROVED_TONE)}
-      title={gold ? `Gold standard${approval.useCase ? ` for ${approval.useCase}` : ""}` : "Reviewed and approved by Enablement"}
+      data-tip={gold ? `Gold standard${approval.useCase ? ` for ${approval.useCase}` : ""}: Enablement's top pick, shown first` : "Enablement approved: reviewed by Clay's Enablement team and ranked higher"}
     >
       {gold ? <Medal weight="bold" size={11} /> : <ShieldCheck weight="bold" size={11} />}
       {gold ? "Gold standard" : short ? "Approved" : "Enablement approved"}
