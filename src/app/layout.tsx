@@ -35,6 +35,9 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+/** Server Actions on every page (Ask AI) may wait for a self-hosted model to boot from idle. */
+export const maxDuration = 300;
+
 export const viewport: Viewport = {
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#FEFDFB" },
