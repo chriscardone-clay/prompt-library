@@ -34,7 +34,10 @@ export interface PromptRow {
   approved_at?: string | null;
   approval_due_at?: string | null;
   approval_use_case?: string | null;
+  outdated_at?: string | null;
+  outdated_note?: string | null;
   approver?: ProfileRow | null;
+  outdater?: ProfileRow | null;
   use_case?: { name: string } | null;
   audiences: string[] | null;
   visibility: string;
@@ -55,8 +58,9 @@ export const PROMPT_SELECT = `
   id, kind, title, description, body, notes, files, links, audiences, visibility, owner_id, parent_id,
   fork_note, last_edited_by, created_at, updated_at,
   workflow_trigger, workflow_stage, integrations, customer_ready,
-  approval, approval_stale, approved_at, approval_due_at, approval_use_case,
+  approval, approval_stale, approved_at, approval_due_at, approval_use_case, outdated_at, outdated_note,
   approver:profiles!prompts_approved_by_fkey ( id, email, name, avatar_url ),
+  outdater:profiles!prompts_outdated_by_fkey ( id, email, name, avatar_url ),
   use_case:enablement_use_cases!prompts_approval_use_case_fkey ( name ),
   owner:profiles!prompts_owner_id_fkey ( id, email, name, avatar_url ),
   prompt_apps ( app, surfaces, model, model_required ),
@@ -71,7 +75,8 @@ function toPerson(p: ProfileRow | null | undefined): Person {
 
 function toApproval(r: PromptRow): Approval {
   const tier = r.approval === "gold" || r.approval === "approved" ? r.approval : "none";
-  if (tier === "none") return NO_APPROVAL;
+  const outdated = r.outdated_at ? { at: r.outdated_at, by: r.outdater ? personFromProfile(r.outdater) : null, note: r.outdated_note ?? "" } : null;
+  if (tier === "none") return outdated ? { ...NO_APPROVAL, outdated } : NO_APPROVAL;
   return {
     tier,
     current: !r.approval_stale,
@@ -80,6 +85,7 @@ function toApproval(r: PromptRow): Approval {
     dueAt: r.approval_due_at ?? null,
     useCaseId: r.approval_use_case ?? null,
     useCase: r.use_case?.name ?? "",
+    outdated,
   };
 }
 
@@ -286,9 +292,9 @@ export async function getPrompt(id: string): Promise<Prompt | null> {
   return p.kind === "workflow" && !(await workflowsEnabled()) ? null : p;
 }
 
-/** Without the ENABLEMENT_APPROVED flag, nothing is approved: no badges, no boost. */
+/** Without the ENABLEMENT_APPROVED flag, nothing is approved or outdated: no badges, no boost, no demotion. */
 async function hideApprovalUnlessEnabled(items: Prompt[]): Promise<Prompt[]> {
-  return (await enablementEnabled()) ? items : items.map((p) => (p.approval.tier === "none" ? p : { ...p, approval: NO_APPROVAL }));
+  return (await enablementEnabled()) ? items : items.map((p) => (p.approval.tier === "none" && !p.approval.outdated ? p : { ...p, approval: NO_APPROVAL }));
 }
 
 /** Lightweight rows for fork counts and the variants tree. */

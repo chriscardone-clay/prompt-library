@@ -120,7 +120,8 @@
 }
 .dot[data-s="changes_requested"],
 .dot[data-s="declined"],
-.dot[data-s="revoked"] {
+.dot[data-s="revoked"],
+.dot[data-s="outdated"] {
   background: var(--warn-bg);
   border-color: var(--warn-fg);
 }

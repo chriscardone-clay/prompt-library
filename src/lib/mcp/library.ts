@@ -1,6 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { approvalBoost, approvalLine, approvalRank, compareRecommended } from "@/lib/approval";
+import { approvalBoost, approvalLine, approvalRank, compareOutdated, compareRecommended } from "@/lib/approval";
 import { type Catalog, installFor } from "@/lib/catalog";
 import { loadCatalog, PROMPT_SELECT, type PromptRow, toPrompt } from "@/lib/data";
 import { parsePlaceholders } from "@/lib/placeholders";
@@ -25,7 +25,8 @@ export interface Library {
   enablement: boolean;
 }
 
-export async function loadLibrary(service: SupabaseClient, me: McpUser, origin: string): Promise<Library> {
+/** `enablement` can be passed in when the caller already evaluated the ENABLEMENT_APPROVED flag. */
+export async function loadLibrary(service: SupabaseClient, me: McpUser, origin: string, enablementOn?: boolean): Promise<Library> {
   const { data: edits } = await service
     .from("prompt_editors")
     .select("prompt_id")
@@ -36,14 +37,14 @@ export async function loadLibrary(service: SupabaseClient, me: McpUser, origin: 
   const [res, catalog, enablement] = await Promise.all([
     service.from("prompts").select(PROMPT_SELECT).or(scope.join(",")).order("updated_at", { ascending: false }),
     loadCatalog(service),
-    featureOn("enablement", { id: me.id, email: me.email }).catch(() => false),
+    enablementOn ?? featureOn("enablement", { id: me.id, email: me.email }).catch(() => false),
   ]);
   if (res.error) throw new Error(`loadLibrary: ${res.error.message}`);
   // Workflows are in beta in the app and not offered through the connector yet.
   const items = ((res.data ?? []) as unknown as PromptRow[])
     .map(toPrompt)
     .filter((p) => p.kind !== "workflow")
-    .map((p) => (enablement || p.approval.tier === "none" ? p : { ...p, approval: NO_APPROVAL }));
+    .map((p) => (enablement || (p.approval.tier === "none" && !p.approval.outdated) ? p : { ...p, approval: NO_APPROVAL }));
   return { items, catalog, me, origin, enablement };
 }
 
@@ -83,7 +84,7 @@ export function summarize(lib: Library, p: Prompt, why?: string): string {
     p.description ? `- description: ${p.description.replace(/\s+/g, " ")}` : "",
     p.apps.length ? `- works in: ${appLine(p)}` : "",
     p.audiences.length ? `- teams: ${p.audiences.join(", ")}` : "",
-    p.approval.tier !== "none" ? `- enablement: ${approvalLine(p.approval)}` : "",
+    p.approval.tier !== "none" || p.approval.outdated ? `- enablement: ${approvalLine(p.approval)}` : "",
     `- by ${p.owner.name} · ${p.upvoteUserIds.length} upvotes · ${p.favoritedBy.length} favorites · updated ${p.updatedAt.slice(0, 10)}`,
   ];
   const placeholders = p.kind === "prompt" ? parsePlaceholders(p.body) : [];
@@ -147,7 +148,8 @@ export function search(lib: Library, query: string, f: Filters, limit: number) {
       const item = byId.get(h.id)!;
       return { item, matched: h.matched, score: h.score + approvalBoost(item.approval), tier: tier(item, h.score) };
     })
-    .sort((a, b) => b.tier - a.tier || b.score - a.score)
+    // Outdated matches go last, however well they match.
+    .sort((a, b) => compareOutdated(a.item, b.item) || b.tier - a.tier || b.score - a.score)
     .slice(0, limit);
 }
 
@@ -156,13 +158,14 @@ export type Sort = "recommended" | "top" | "new" | "updated";
 export function browse(lib: Library, f: Filters, sort: Sort, limit: number, offset: number) {
   const pool = applyFilters(lib.items, f, lib);
   const sorted = [...pool].sort((a, b) =>
-    sort === "recommended"
+    compareOutdated(a, b) ||
+    (sort === "recommended"
       ? compareRecommended(a, b) || popularity(b) - popularity(a)
       : sort === "top"
       ? popularity(b) - popularity(a) || b.updatedAt.localeCompare(a.updatedAt)
       : sort === "new"
         ? b.createdAt.localeCompare(a.createdAt)
-        : b.updatedAt.localeCompare(a.updatedAt),
+        : b.updatedAt.localeCompare(a.updatedAt)),
   );
   return { total: pool.length, page: sorted.slice(offset, offset + limit) };
 }

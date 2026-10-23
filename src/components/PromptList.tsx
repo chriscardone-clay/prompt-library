@@ -17,7 +17,7 @@ import {
   type Catalog,
 } from "@/lib/catalog";
 import { isSort, isStage, isTrigger, SORT_LABELS, SORTS, STAGE_LABELS, TRIGGER_LABELS, WORKFLOW_STAGES, WORKFLOW_TRIGGERS, type Kind, type Sort } from "@/lib/constants";
-import { approvalBoost, approvalRank, compareRecommended } from "@/lib/approval";
+import { approvalBoost, approvalRank, compareOutdated, compareRecommended } from "@/lib/approval";
 import { ago, plural } from "@/lib/format";
 import { searchPrompts } from "@/lib/search";
 import type { Profile, Prompt } from "@/lib/types";
@@ -285,6 +285,9 @@ export function PromptList({ view, prompts, allPrompts, me, catalog, workflowsOn
     }
     const t = (s: string) => new Date(s).getTime();
     return [...out].sort((a, b) => {
+      // Outdated items sink below everything else, in search results and every sort.
+      const stale = compareOutdated(a, b);
+      if (stale) return stale;
       if (needle) {
         const d = (relevance.get(b.id) ?? 0) - (relevance.get(a.id) ?? 0);
         if (Math.abs(d) > 1e-6) return d;

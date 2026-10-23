@@ -121,6 +121,28 @@ export async function revokeApproval(promptId: string, note: string): Promise<Ac
   return done(promptId);
 }
 
+export async function setOutdated(promptId: string, outdated: boolean, note: string): Promise<ActionResult> {
+  const { supabase, error, user } = await requireReviewer();
+  if (error) return { ok: false, error };
+  if (outdated && !note.trim()) return { ok: false, error: "Say what's out of date, so the owner knows what to fix." };
+  const before = await getPrompt(promptId);
+  const { error: e } = await supabase.rpc("review_set_outdated", { p_prompt: promptId, p_outdated: outdated, p_note: clean(note, NOTE_MAX) });
+  if (e) return sqlError(e);
+  if (before && outdated) after(() => notifyDecision({ to: [before.owner.email], promptId, title: before.title, decision: "outdated", reviewer: user.name, note }));
+  return done(promptId);
+}
+
+/** Reviewers: become an editor of a public item, to fix it themselves. The owner gets a DM. */
+export async function joinAsEditor(promptId: string): Promise<ActionResult> {
+  const { supabase, error, user } = await requireReviewer();
+  if (error) return { ok: false, error };
+  const { data, error: e } = await supabase.rpc("review_join_as_editor", { p_prompt: promptId });
+  if (e) return sqlError(e);
+  const p = data === true ? await getPrompt(promptId) : null;
+  if (p) after(() => notifyDecision({ to: [p.owner.email], promptId, title: p.title, decision: "editor_joined", reviewer: user.name, note: "" }));
+  return done(promptId);
+}
+
 export async function setGold(useCaseId: string, promptId: string | null): Promise<ActionResult> {
   const { supabase, error, user } = await requireReviewer();
   if (error) return { ok: false, error };

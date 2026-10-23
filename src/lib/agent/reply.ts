@@ -18,8 +18,8 @@ export function buildReplyMessage(question: string, result: AnswerResult, siteUr
     const req = c.models.find((m) => m.required);
     const bits = [kind, c.apps.length ? esc(c.apps.join(", ")) : null, req ? `requires ${esc(req.model)}` : null].filter(Boolean).join(" · ");
     const why = result.why.get(c.id);
-    const badge = c.tier === 2 ? "🏅 " : c.tier === 1 ? "✅ " : "";
-    const tierLine = c.tier === 2 ? `Gold standard${c.useCase ? ` for ${esc(c.useCase)}` : ""}` : c.tier === 1 ? "Enablement approved" : "";
+    const badge = c.outdated ? "⚠️ " : c.tier === 2 ? "🏅 " : c.tier === 1 ? "✅ " : "";
+    const tierLine = c.outdated ? "Flagged outdated by Enablement" : c.tier === 2 ? `Gold standard${c.useCase ? ` for ${esc(c.useCase)}` : ""}` : c.tier === 1 ? "Enablement approved" : "";
     const lines = [`${badge}*<${url}|${esc(c.title)}>* · ${bits}${tierLine ? ` · ${tierLine}` : ""}`, c.description ? esc(clip(c.description, 160)) : "", why ? `_${esc(why)}_` : ""].filter(Boolean);
     blocks.push({
       type: "section",

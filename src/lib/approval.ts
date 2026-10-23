@@ -14,21 +14,32 @@ export const GOLD_BOOST = 0.35;
 export const APPROVED_BOOST = 0.2;
 
 export function approvalBoost(a: Approval): number {
-  if (!a.current) return 0;
+  if (!a.current || a.outdated) return 0;
   return a.tier === "gold" ? GOLD_BOOST : a.tier === "approved" ? APPROVED_BOOST : 0;
 }
 
-/** 2 = gold, 1 = approved (current version), 0 = everything else. */
+/** 2 = gold, 1 = approved (current version), 0 = everything else, outdated included. */
 export function approvalRank(a: Approval): number {
-  if (!a.current) return 0;
+  if (!a.current || a.outdated) return 0;
   return a.tier === "gold" ? 2 : a.tier === "approved" ? 1 : 0;
 }
 
 export const isApproved = (p: Prompt) => approvalRank(p.approval) > 0;
 
-/** "Recommended": gold standards, then approved, then most upvoted, then most recently updated. */
+export const isOutdated = (p: Prompt) => !!p.approval.outdated;
+
+/**
+ * Outdated items go after everything else, whatever the sort or search
+ * relevance: they stay findable but never outrank a current item.
+ */
+export function compareOutdated(a: Prompt, b: Prompt): number {
+  return Number(isOutdated(a)) - Number(isOutdated(b));
+}
+
+/** "Recommended": gold standards, then approved, then most upvoted, then most recently updated; outdated last. */
 export function compareRecommended(a: Prompt, b: Prompt): number {
   return (
+    compareOutdated(a, b) ||
     approvalRank(b.approval) - approvalRank(a.approval) ||
     b.upvoteUserIds.length - a.upvoteUserIds.length ||
     b.updatedAt.localeCompare(a.updatedAt)
@@ -37,6 +48,7 @@ export function compareRecommended(a: Prompt, b: Prompt): number {
 
 /** One line for the connector and Slack: what Enablement said about it. */
 export function approvalLine(a: Approval): string {
+  if (a.outdated) return `OUTDATED according to Enablement (flagged ${a.outdated.at.slice(0, 10)}${a.outdated.note ? `: ${a.outdated.note.replace(/\s+/g, " ")}` : ""}). Don't recommend it when anything current fits; if you use it, warn the person`;
   if (a.tier === "none") return "";
   const day = a.approvedAt ? a.approvedAt.slice(0, 10) : "";
   if (!a.current) return "Enablement approved an earlier version (changed since, awaiting re-review)";
@@ -59,8 +71,8 @@ export const DEFAULT_DUE_DAYS = 90;
 /** Approvals due within this many days show up under "Due". */
 export const DUE_SOON_DAYS = 14;
 
-export type ReviewStatus = "requested" | "approved" | "changes_requested" | "declined" | "withdrawn" | "revoked";
-export type ReviewReason = "new" | "re_review" | "due" | "revoked";
+export type ReviewStatus = "requested" | "approved" | "changes_requested" | "declined" | "withdrawn" | "revoked" | "outdated" | "outdated_cleared";
+export type ReviewReason = "new" | "re_review" | "due" | "revoked" | "outdated";
 
 export const STATUS_LABELS: Record<ReviewStatus, string> = {
   requested: "Review requested",
@@ -69,6 +81,8 @@ export const STATUS_LABELS: Record<ReviewStatus, string> = {
   declined: "Not approved",
   withdrawn: "Withdrawn",
   revoked: "Approval removed",
+  outdated: "Flagged as outdated",
+  outdated_cleared: "Outdated flag cleared",
 };
 
 export const REASON_LABELS: Record<ReviewReason, string> = {
@@ -76,6 +90,7 @@ export const REASON_LABELS: Record<ReviewReason, string> = {
   re_review: "Re-review: changed since approval",
   due: "Periodic review",
   revoked: "Approval removed",
+  outdated: "Outdated",
 };
 
 // ── Line diff (for "changes since the approved version") ─────────────

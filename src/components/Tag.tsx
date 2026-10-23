@@ -1,4 +1,4 @@
-import { ArrowsClockwise, CheckCircle, Files, FlowArrow, GitFork, LockSimple, Medal, ShieldCheck } from "@phosphor-icons/react/dist/ssr";
+import { ArrowsClockwise, CheckCircle, Files, FlowArrow, GitFork, LockSimple, Medal, ShieldCheck, Warning } from "@phosphor-icons/react/dist/ssr";
 import {
   ADAPTATION_TONE,
   APPROVED_TONE,
@@ -6,6 +6,7 @@ import {
   STALE_TONE,
   FALLBACK_TONE,
   NOT_READY_TONE,
+  OUTDATED_TONE,
   READY_TONE,
   REFERENCE_TONE,
   type Tone,
@@ -109,6 +110,14 @@ export function IntegrationTag({ name, color }: { name: string; color?: string }
 
 /** Enablement's verdict: gold standard, approved, or approved-then-edited. Nothing for unreviewed items. */
 export function ApprovalTag({ approval, short = false }: { approval: Approval; short?: boolean }) {
+  if (approval.outdated) {
+    return (
+      <span className="tag tone" style={toneStyle(OUTDATED_TONE)} data-tip={`Enablement flagged this as outdated${approval.outdated.note ? `: ${approval.outdated.note}` : ""}. It's listed after current items.`}>
+        <Warning weight="bold" size={11} />
+        Outdated
+      </span>
+    );
+  }
   if (approval.tier === "none") return null;
   if (!approval.current) {
     return (
