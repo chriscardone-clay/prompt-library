@@ -48,6 +48,8 @@ export function VoteButton({ promptId, count, voted, size = "sm", surface = "sla
         surface === "page" ? styles.onPage : ""
       }`}
       data-voted={state.voted ? "" : undefined}
+      data-tip={`${state.count} upvote${state.count === 1 ? "" : "s"}. ${state.voted ? "You upvoted this; click to undo" : "Upvote if it works well: it helps others find it"}`}
+      data-tip-end=""
     >
       <ArrowFatUp weight={state.voted ? "fill" : "bold"} size={size === "md" ? 15 : 13} />
       {state.count}

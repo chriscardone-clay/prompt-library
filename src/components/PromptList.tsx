@@ -601,7 +601,7 @@ function PromptCard({ prompt: p, forks, meId, catalog }: { prompt: Prompt; forks
           <AppTag key={a.app} app={a} tone={appTone(catalog, a.app)} short />
         ))}
         {p.apps.length > 2 ? (
-          <span className="tag tag-light tag-muted" title={p.apps.slice(2).map((a) => a.app).join(", ")}>
+          <span className="tag tag-light tag-muted" data-tip={`Also works in ${p.apps.slice(2).map((a) => a.app).join(", ")}`}>
             +{p.apps.length - 2}
           </span>
         ) : null}
@@ -609,16 +609,22 @@ function PromptCard({ prompt: p, forks, meId, catalog }: { prompt: Prompt; forks
           <span
             className="tag tone"
             style={toneStyle(REQUIRED_TONE)}
-            title={p.apps.filter((a) => a.required && a.model).map((a) => `Requires ${a.app} ${a.model}`).join(" · ")}
+            data-tip={`Model required: ${p.apps.filter((a) => a.required && a.model).map((a) => `${a.app} ${a.model}`).join(", ")}. The author says it won't work as well on others.`}
           >
             <Cpu weight="bold" size={11} />
             {required.model}
           </span>
         ) : null}
         <div className="grow" />
-        {p.parentId ? <GitFork weight="bold" size={15} className="muted" aria-label="Forked" /> : null}
+        {p.parentId ? (
+          <span className={styles.tipIcon} data-tip="Fork: someone's own version of another item" data-tip-end="">
+            <GitFork weight="bold" size={15} aria-label="Fork" />
+          </span>
+        ) : null}
         {p.visibility === "private" ? (
-          <LockSimple size={16} className="muted" aria-label="Private" />
+          <span className={styles.tipIcon} data-tip="Private: only you and editors can see it" data-tip-end="">
+            <LockSimple size={16} aria-label="Private" />
+          </span>
         ) : null}
         <FavoriteButton promptId={p.id} favorited={p.favoritedBy.includes(meId)} />
       </div>
@@ -657,8 +663,16 @@ function WorkflowCard({ prompt: p, forks, meId, catalog }: { prompt: Prompt; for
         <ApprovalTag approval={p.approval} short />
         <WorkflowTag />
         <div className="grow" />
-        {p.parentId ? <GitFork weight="bold" size={15} className="muted" aria-label="Adaptation" /> : null}
-        {p.visibility === "private" ? <LockSimple size={16} className="muted" aria-label="Private" /> : null}
+        {p.parentId ? (
+          <span className={styles.tipIcon} data-tip="Adaptation: a reference architecture tailored for a specific customer or use" data-tip-end="">
+            <GitFork weight="bold" size={15} aria-label="Adaptation" />
+          </span>
+        ) : null}
+        {p.visibility === "private" ? (
+          <span className={styles.tipIcon} data-tip="Private: only you and editors can see it" data-tip-end="">
+            <LockSimple size={16} aria-label="Private" />
+          </span>
+        ) : null}
         <FavoriteButton promptId={p.id} favorited={p.favoritedBy.includes(meId)} />
       </div>
       <div className={styles.cardBody}>
@@ -704,10 +718,10 @@ function SortMenu({ sorts, sort, onChange }: { sorts: readonly Sort[]; sort: Sor
       if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", onDown);
+    document.addEventListener("pointerdown", onDown);
     document.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("pointerdown", onDown);
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);

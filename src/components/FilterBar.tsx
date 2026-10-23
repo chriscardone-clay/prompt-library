@@ -106,10 +106,10 @@ export function FilterBar({ facets, textFields = [], resultLabel, onClearAll }: 
       if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(null);
     };
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(null);
-    document.addEventListener("mousedown", onDown);
+    document.addEventListener("pointerdown", onDown);
     document.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("pointerdown", onDown);
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);
@@ -271,11 +271,20 @@ function FilterDrawer({
   onClose: () => void;
 }) {
   const [expanded, setExpanded] = useState<string | null>(focus);
+  const [closing, setClosing] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
   const item = useRef<Record<string, HTMLDivElement | null>>({});
+  // Slide out, then unmount. Reduced motion (or a missed animationend) closes straight away.
+  const close = useRef(onClose);
+  close.current = onClose;
+  const requestClose = useRef(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return close.current();
+    setClosing(true);
+    window.setTimeout(() => close.current(), 260);
+  }).current;
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && requestClose();
     document.addEventListener("keydown", onKey);
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -290,14 +299,14 @@ function FilterDrawer({
 
   return (
     <div className={styles.drawerLayer}>
-      <div className={styles.scrim} onClick={onClose} aria-hidden="true" />
-      <aside className={styles.drawer} role="dialog" aria-modal="true" aria-labelledby="filters-title">
+      <div className={styles.scrim} onClick={requestClose} aria-hidden="true" data-closing={closing ? "" : undefined} />
+      <aside className={styles.drawer} data-closing={closing ? "" : undefined} role="dialog" aria-modal="true" aria-labelledby="filters-title">
         <div className={styles.drawerHead}>
           <h2 id="filters-title" className={styles.drawerTitle}>
             Filters
           </h2>
           <span className="tiny muted grow">{activeTotal ? `${activeTotal} active` : ""}</span>
-          <button ref={closeRef} type="button" className="icon-btn" aria-label="Close filters" onClick={onClose}>
+          <button ref={closeRef} type="button" className="icon-btn" aria-label="Close filters" onClick={requestClose}>
             <X size={18} />
           </button>
         </div>
@@ -333,7 +342,7 @@ function FilterDrawer({
           <button type="button" className={styles.clearAll} onClick={onClearAll} disabled={!activeTotal}>
             Clear all
           </button>
-          <button type="button" className="btn btn-primary" onClick={onClose}>
+          <button type="button" className="btn btn-primary" onClick={requestClose}>
             Show {resultLabel}
           </button>
         </div>

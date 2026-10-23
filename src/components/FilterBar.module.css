@@ -330,6 +330,27 @@
     opacity: 0;
   }
 }
+@keyframes slideOut {
+  to {
+    transform: translateX(-100%);
+  }
+}
+@keyframes slideDown {
+  to {
+    transform: translateY(100%);
+  }
+}
+@keyframes fadeOut {
+  to {
+    opacity: 0;
+  }
+}
+.drawer[data-closing] {
+  animation: slideOut 240ms var(--ease) forwards;
+}
+.scrim[data-closing] {
+  animation: fadeOut 240ms var(--ease) forwards;
+}
 @media (prefers-reduced-motion: reduce) {
   .drawer,
   .scrim {
@@ -444,6 +465,9 @@
     border-radius: 24px 24px 0 0;
     padding-bottom: env(safe-area-inset-bottom);
     animation-name: slideUp;
+  }
+  .drawer[data-closing] {
+    animation-name: slideDown;
   }
   .allRow {
     grid-template-columns: 130px minmax(0, 1fr) 14px;
