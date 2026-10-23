@@ -55,6 +55,8 @@ const StoredTurn = z.object({
   picks: z.array(z.object({ id: z.string(), why: z.string() })).optional(),
   followUps: z.array(z.string()).optional(),
   fallback: z.boolean().optional(),
+  /** The model error behind a fallback, for debugging; never sent to the browser. */
+  error: z.string().optional(),
 });
 type StoredTurn = z.infer<typeof StoredTurn>;
 
@@ -138,7 +140,7 @@ export async function askLibrary(input: { chatId: string | null; question: strin
   const asked: StoredTurn[] = [...turns, { role: "user", text: question, ...(viewing ? { viewing: { id: viewing.id, title: viewing.title } } : {}) }];
   const forModel: Turn[] = asked.map((t) => ({ role: t.role, text: t.text || "(no reply)", picks: t.picks?.map((p) => p.id), viewing: t.viewing?.title }));
   const result = await askLibraryAi(items, user, forModel, catalog.apps.map((a) => a.name), undefined, viewing);
-  const next: StoredTurn[] = [...asked, { role: "assistant", text: result.reply, picks: result.picks, followUps: result.followUps, fallback: result.fallback }];
+  const next: StoredTurn[] = [...asked, { role: "assistant", text: result.reply, picks: result.picks, followUps: result.followUps, fallback: result.fallback, ...(result.error ? { error: result.error } : {}) }];
 
   let id = chatId;
   let title = question.slice(0, 120);

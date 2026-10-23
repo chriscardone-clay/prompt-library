@@ -1,7 +1,6 @@
 import "server-only";
 import { generateText, type LanguageModel, Output } from "ai";
 import { z } from "zod";
-import { AGENT_MODEL } from "./agent/answer";
 import { chatModel, LLM_TIMEOUT_MS } from "./llm";
 import { approvalRank } from "./approval";
 import { searchPrompts } from "./search";
@@ -13,7 +12,13 @@ import type { Profile, Prompt } from "./types";
  * already apply), with a reason per pick written for this person, and
  * follow-up turns. Runs on Vercel's AI Gateway like the Slack assistant.
  */
-export const AI_SEARCH_MODEL = process.env.AI_SEARCH_MODEL?.trim() || AGENT_MODEL;
+/**
+ * Ask AI's own model, independent of the Slack assistant's. Haiku follows these
+ * instructions and returns the structured picks reliably at a fraction of
+ * Sonnet's price. Needs paid AI Gateway credits (the free tier only serves a
+ * handful of evaluation models).
+ */
+export const AI_SEARCH_MODEL = process.env.AI_SEARCH_MODEL?.trim() || "anthropic/claude-haiku-5.5";
 
 /** Turns sent to the model: the most recent ones, so long chats stay fast. */
 export const CONTEXT_TURNS = 12;
@@ -62,6 +67,8 @@ export interface AiResult {
   followUps: string[];
   /** True when the model couldn't be reached and plain search answered instead. */
   fallback: boolean;
+  /** Why the model call failed, when it fell back (stored, not shown). */
+  error?: string;
   searched: number;
 }
 
@@ -225,7 +232,7 @@ export async function askLibraryAi(
         model,
         system: `${PAGE_SYSTEM}\n\nAbout the person: ${me.name}.\n\nThe item they have open:\n${viewingBlock(viewing)}`,
         messages: pageMessages,
-        maxOutputTokens: 1600,
+        maxOutputTokens: 6000,
         maxRetries: 1,
         abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
       });
@@ -238,7 +245,7 @@ export async function askLibraryAi(
       system: `${SYSTEM}\n\n${prompt}`,
       messages,
       output: Output.object({ schema: ReplySchema }),
-      maxOutputTokens: 1600,
+      maxOutputTokens: 6000,
       maxRetries: 1,
       abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
     });
@@ -252,9 +259,10 @@ export async function askLibraryAi(
       .map((p) => ({ id: p.id, why: p.why }));
     return { reply: out.reply, picks, followUps: out.follow_ups, fallback: false, searched: items.length };
   } catch (err) {
-    console.warn("[ai-search] model call failed, using plain search:", err instanceof Error ? err.message : err);
+    const error = (err instanceof Error ? err.message : String(err)).slice(0, 500);
+    console.warn("[ai-search] model call failed, using plain search:", error);
     if (viewing && !asksForLibrary(lastQuestion)) {
-      return { reply: "The AI assistant isn't available right now. Everything about this item is on the page: its description, how-to-use notes and files.", picks: [], followUps: [], fallback: true, searched: items.length };
+      return { reply: "The AI assistant isn't available right now. Everything about this item is on the page: its description, how-to-use notes and files.", picks: [], followUps: [], fallback: true, error, searched: items.length };
     }
     const hits = searchPrompts(items, lastQuestion, appNames).filter((h) => h.score > 0).slice(0, MAX_PICKS);
     return {
@@ -264,6 +272,7 @@ export async function askLibraryAi(
       picks: hits.map((h) => ({ id: h.id, why: h.matched.length ? `Matches ${h.matched.slice(0, 4).join(", ")}.` : "Closest match." })),
       followUps: [],
       fallback: true,
+      error,
       searched: items.length,
     };
   }
