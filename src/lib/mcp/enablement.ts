@@ -5,6 +5,7 @@ import { after } from "next/server";
 import { z } from "zod";
 import { approvalLine, compactDiff, compareOutdated, DEFAULT_DUE_DAYS, diffLines, DUE_SOON_DAYS, REASON_LABELS, RUBRIC, STATUS_LABELS, type ReviewReason, type ReviewStatus } from "@/lib/approval";
 import { type Decision, notifyDecision, notifyRequest } from "@/lib/enablementNotify";
+import { notifyFeedbackPosted } from "@/lib/feedbackNotify";
 import { parsePlaceholders } from "@/lib/placeholders";
 import type { Prompt } from "@/lib/types";
 import { qualityNotes } from "./create";
@@ -93,10 +94,11 @@ const REVIEW_SELECT = `id, prompt_id, reason, status, tier, use_case_id, request
   reviewer:profiles!prompt_reviews_reviewer_id_fkey ( name )`;
 
 /** Run one Enablement action as the connected person. SQL raises friendly messages; pass them on. */
-async function act(ctx: EnablementContext, action: string, args: Record<string, unknown>): Promise<{ ok: true; id: string | null } | { ok: false; error: string }> {
+async function act(ctx: EnablementContext, action: string, args: Record<string, unknown>): Promise<{ ok: true; id: string | null; joined?: boolean } | { ok: false; error: string }> {
   const { data, error } = await ctx.service.rpc("connector_enablement", { p_actor: ctx.me.id, p_action: action, p_args: args });
   if (error) return { ok: false, error: error.message || "Something went wrong." };
-  return { ok: true, id: ((data ?? {}) as { id: string | null }).id ?? null };
+  const d = (data ?? {}) as { id?: string | null; joined?: boolean };
+  return { ok: true, id: d.id ?? null, joined: d.joined };
 }
 
 /** The rubric as tool input: every key optional, true when it passes. */
@@ -169,6 +171,56 @@ function autoChecks(l: Library, p: Prompt, similar: Prompt[], gold: Prompt | und
   ];
 }
 
+// ── Impact scan helpers ─────────────────────────────────────────────
+const escapeRe = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Case-insensitive, from the start of a word: "Claygent" finds "Claygents" and
+ * "Claygent's" but not "MyClaygent"; "$0.10" matches as typed. Errs towards
+ * extra hits, since a missed item is worse than one to skip.
+ */
+function termRe(term: string): RegExp {
+  const t = term.trim();
+  return new RegExp(`${/^\w/.test(t) ? "\\b" : ""}${escapeRe(t)}`, "gi");
+}
+
+interface Hit {
+  term: string;
+  where: string;
+  snippet: string;
+}
+
+/** Every field a person reads: title, description, notes, the prompt text and each skill text file. */
+function fieldsOf(p: Prompt): { where: string; text: string }[] {
+  const out = [
+    { where: "title", text: p.title },
+    { where: "description", text: p.description },
+    { where: "how to use", text: p.notes },
+  ];
+  if (p.kind === "prompt") out.push({ where: "prompt", text: p.body });
+  else {
+    const files = p.files.filter((f) => !f.path);
+    if (files.length) for (const f of files) out.push({ where: f.name, text: f.content });
+    else out.push({ where: "SKILL.md", text: p.body });
+  }
+  return out.filter((f) => f.text);
+}
+
+function scanItem(p: Prompt, terms: string[]): Hit[] {
+  const hits: Hit[] = [];
+  for (const term of terms) {
+    for (const f of fieldsOf(p)) {
+      const m = termRe(term).exec(f.text);
+      if (!m) continue;
+      const from = Math.max(0, m.index - 70);
+      const to = Math.min(f.text.length, m.index + m[0].length + 70);
+      hits.push({ term, where: f.where, snippet: `${from ? "…" : ""}${f.text.slice(from, to).replace(/\s+/g, " ").trim()}${to < f.text.length ? "…" : ""}` });
+      break; // first field per term is enough to show why
+    }
+  }
+  return hits;
+}
+
 const SIGNAL = { pass: "✅ looks fine", warn: "⚠️ needs a look", check: "🔎 check by hand" } as const;
 
 // ── Tools ───────────────────────────────────────────────────────────
@@ -231,6 +283,32 @@ export function registerEnablementTools(server: McpServer, ctx: EnablementContex
       return text(
         [`Top ${page.length} by use through Claude and other connected apps, last ${period} days (usage on the site itself isn't counted):`, ...page.map((p) => summarize(l, p, why(p)))].join("\n\n"),
       );
+    }),
+  );
+
+  server.registerTool(
+    "leave_feedback",
+    {
+      title: "Leave feedback for an item's owner",
+      description:
+        "Posts feedback on a prompt or skill's page, as the connected person, and DMs the owner on Slack. Use for \"tell the owner…\", or during an impact scan when the owner should make the fix. Write it so the owner can act without asking: what's wrong, why (e.g. which product change), and the suggested fix. Show the person the exact text and only post after they say yes.",
+      inputSchema: { id: idArg, text: z.string().min(1).max(4000).describe("The feedback, as the owner will read it") },
+      annotations: writes,
+    },
+    traced("leave_feedback", "other", async ({ id, text: body }, ev) => {
+      if (!ctx.canWrite) return { ...ctx.reconnect(), isError: true as const };
+      const l = await library();
+      const p = findItem(l, id);
+      if (!p) {
+        ev.outcome = "not_found";
+        return notFound(id);
+      }
+      ev.promptId = p.id;
+      ev.detail = { feedback: true, chars: body.trim().length };
+      const { error } = await service.from("feedback").insert({ prompt_id: p.id, user_id: ctx.me.id, text: body.trim() });
+      if (error) return fail(`Not posted: ${error.message}`);
+      after(() => notifyFeedbackPosted(service, p.id, ctx.me.id, body.trim()));
+      return text(`Posted your feedback on "${p.title}"${p.ownerId === ctx.me.id ? "" : `; ${p.owner.name} gets a Slack DM`}: ${itemUrl(l, p)}#feedback`);
     }),
   );
 
@@ -568,6 +646,91 @@ export function registerEnablementTools(server: McpServer, ctx: EnablementContex
       if (!g.ok) return text(`Added the use case "${name.trim()}", but "${p.title}" isn't its gold standard yet: ${g.error} Use set_gold_standard to approve it as gold.`);
       after(() => notifyDecision({ to: [p.owner.email], promptId: p.id, title: p.title, decision: "gold", reviewer: ctx.me.name, note: "", useCase: name.trim() }));
       return text(`Added the use case "${name.trim()}" with "${p.title}" as its gold standard: ${itemUrl(l, p)}`);
+    }),
+  );
+
+  server.registerTool(
+    "find_impacted",
+    {
+      title: "Find items a product update affects",
+      description:
+        "For Enablement reviewers, after a product update (renamed or retired feature, new pricing, a model change, new messaging): scans every public prompt and skill for the exact terms that changed, with the passage each was found in, plus items related to the update by topic. Before calling, ask the person what changed and turn it into exact terms: old names, old numbers, retired phrases (\"Claygent Neon\", \"$0.10 per credit\", \"Sculptor\"). Then go through the results with them and decide per item: leave_feedback (the owner fixes it), flag_outdated, or join_as_editor and fix it yourselves (preview_changes → update_item). Saves nothing.",
+      inputSchema: {
+        change: z.string().min(1).max(1000).describe("The product update in plain words"),
+        terms: z.array(z.string().min(2).max(100)).max(25).optional().describe("Exact words, names or numbers that changed or were removed. The scan is only reliable with these"),
+        kind: z.enum(["prompt", "skill"]).optional(),
+        team: z.string().optional(),
+        app: z.string().optional(),
+        include_outdated: z.boolean().optional().describe("Also list items already flagged as outdated. Default false"),
+        limit: z.number().int().min(1).max(50).optional().describe("Default 25"),
+      },
+      annotations: readOnly,
+    },
+    traced("find_impacted", "review", async ({ change, terms, kind: k, team, app, include_outdated, limit }, ev) => {
+      const l = await library();
+      const n = limit ?? 25;
+      const words = [...new Set((terms ?? []).map((t) => t.trim()).filter(Boolean))];
+      const pool = applyFilters(l.items, { kind: k, team, app }, l).filter((p) => p.visibility === "public");
+      const skippedOutdated = include_outdated ? 0 : pool.filter((p) => p.approval.outdated).length;
+      const scan = include_outdated ? pool : pool.filter((p) => !p.approval.outdated);
+      ev.query = change;
+      ev.filters = { terms: words, kind: k, team, app, include_outdated };
+
+      const exact = words.length
+        ? scan
+            .map((p) => ({ p, hits: scanItem(p, words) }))
+            .filter((x) => x.hits.length)
+            .sort((a, b) => b.hits.length - a.hits.length || popularity(b.p) - popularity(a.p))
+        : [];
+      const exactIds = new Set(exact.map((x) => x.p.id));
+      const related = search(l, [change, ...words].join(" "), { kind: k, team, app }, 15)
+        .filter((h) => !exactIds.has(h.item.id) && h.item.visibility === "public" && (include_outdated || !h.item.approval.outdated))
+        .slice(0, Math.max(0, Math.min(10, n - Math.min(exact.length, n))));
+      const shown = exact.slice(0, n);
+      ev.resultIds = [...shown.map((x) => x.p.id), ...related.map((h) => h.item.id)];
+      ev.resultCount = exact.length;
+      if (!exact.length && !related.length) ev.outcome = "empty";
+
+      const relation = (p: Prompt) => (isMine(l, p) ? " · you can edit it" : ` · owner ${p.owner.name}`);
+      const parts = [
+        `# Impact scan: ${change.replace(/\s+/g, " ").slice(0, 200)}`,
+        `Scanned ${plural(scan.length, "public item")}${words.length ? ` for ${words.map((w) => `"${w}"`).join(", ")}` : ""}.${skippedOutdated ? ` ${skippedOutdated} already flagged outdated were skipped (include_outdated: true to list them).` : ""}`,
+        !words.length ? "No exact terms were given, so this is a topic match only and can miss items. Ask the person for the old names, numbers or phrases and scan again." : "",
+        words.length ? `\n## Mention the changed terms (${exact.length}${exact.length > n ? `, showing ${n}` : ""})\n\n${shown.map(({ p, hits }) => `${summarize(l, p, `mentions ${hits.map((h) => `"${h.term}"`).join(", ")}${relation(p)}`)}\n${hits.slice(0, 3).map((h) => `  - in ${h.where}: "${h.snippet}"`).join("\n")}`).join("\n\n") || "None."}` : "",
+        related.length ? `\n## Possibly related by topic (check by hand)\n\n${related.map((h) => summarize(l, h.item, `${h.matched.length ? `matches ${h.matched.slice(0, 4).join(", ")}` : "related"}${relation(h.item)}`)).join("\n\n")}` : "",
+        `\nNext: go through these with the person, one line each with your suggestion. For each, they can leave_feedback for the owner (say what changed and the fix), flag_outdated with a note, or join_as_editor and fix it here (preview_changes → update_item). Confirm in one message before writing anything, then make the calls.`,
+      ];
+      return text(parts.filter(Boolean).join("\n"));
+    }),
+  );
+
+  server.registerTool(
+    "join_as_editor",
+    {
+      title: "Add yourself as an editor",
+      description:
+        "For Enablement reviewers: become an editor of a public prompt or skill so you can fix it yourself (for example after a product update), then use preview_changes and update_item as usual. The owner gets a Slack DM. Private items need the owner to add you. Editing approved content sends it back for a re-review. Confirm with the person first.",
+      inputSchema: { id: idArg },
+      annotations: { ...writes, idempotentHint: true },
+    },
+    traced("join_as_editor", "edit", async ({ id }, ev) => {
+      if (!ctx.canWrite) return { ...ctx.reconnect(), isError: true as const };
+      const l = await library();
+      const p = findItem(l, id);
+      if (!p) {
+        ev.outcome = "not_found";
+        return notFound(id);
+      }
+      ev.promptId = p.id;
+      const r = await act(ctx, "join_editor", { prompt: p.id });
+      if (!r.ok) {
+        ev.outcome = "denied";
+        return fail(`Not added: ${r.error}`);
+      }
+      ev.detail = { joined: !!r.joined };
+      if (!r.joined) return text(`You can already edit "${p.title}". Use preview_changes with id ${p.id}.`);
+      after(() => notifyDecision({ to: [p.owner.email], promptId: p.id, title: p.title, decision: "editor_joined", reviewer: ctx.me.name, note: "" }));
+      return text(`You're now an editor of "${p.title}" (${p.owner.name} gets a Slack DM). Make the change with preview_changes (id ${p.id}, only the fields that change), show it, then update_item once they say yes.${p.approval.tier !== "none" ? " It's Enablement approved, so changing its content queues a re-review; approve it again with decide_review when you're happy." : ""}`);
     }),
   );
 

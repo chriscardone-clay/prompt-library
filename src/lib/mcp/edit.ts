@@ -97,7 +97,7 @@ function appsLabel(apps: PromptDraft["apps"]) {
 export function prepareEdit(lib: Library, input: EditInput): PreparedEdit {
   const item = findItem(lib, input.id);
   if (!item) return fail(`No item with id ${input.id} that you can see.`);
-  if (!canEditItem(lib, item)) return fail(`Only the owner (${item.owner.name}) and editors can change "${item.title}". Suggest forking it on the site, or leaving feedback for the owner.`, item);
+  if (!canEditItem(lib, item)) return fail(`Only the owner (${item.owner.name}) and editors can change "${item.title}". Suggest saving their own version (start_improving), or leave_feedback for the owner. Enablement reviewers can join_as_editor on public items.`, item);
   const isOwner = item.ownerId === lib.me.id;
 
   if (item.kind === "prompt" && (input.files?.length || input.remove_files?.length)) return fail("Prompts don't have files; change the prompt text with body.", item);

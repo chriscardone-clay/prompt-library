@@ -4,6 +4,7 @@ import { approvalRank, RUBRIC, STATUS_LABELS, type ReviewStatus } from "@/lib/ap
 import type { Review, UseCase } from "@/lib/enablement";
 import { ago } from "@/lib/format";
 import type { Prompt } from "@/lib/types";
+import { JoinAsEditorButton } from "./JoinAsEditorButton";
 import { OutdatedButton } from "./OutdatedButton";
 import { RequestReviewButton, WithdrawReviewButton } from "./RequestReview";
 import styles from "./Approval.module.css";
@@ -260,6 +261,7 @@ export function ApprovalPanel({ prompt, reviews, editable, reviewer, useCases, g
             {open ? "Review it" : approvalRank(a) > 0 ? "Re-review or change" : "Review it now"}
           </Link>
         ) : null}
+        {reviewer && !editable && prompt.visibility === "public" ? <JoinAsEditorButton promptId={prompt.id} /> : null}
         {reviewer ? <OutdatedButton promptId={prompt.id} title={prompt.title} outdated={!!a.outdated} gold={a.tier === "gold"} /> : null}
       </div>
     </div>

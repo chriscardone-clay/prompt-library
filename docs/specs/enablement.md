@@ -22,10 +22,13 @@ Enablement keeps a **gold standard** for each common job (a *use case*, e.g. "Ac
 
 - **Outdated is separate from approval.** A reviewer flags an item as outdated with a note (what's wrong). It sorts after every current item in every list and search, gets no approval boost while flagged, shows a warning on its page and an Outdated tag on cards, and stops being a gold standard (it stays approved underneath). Editing the item doesn't clear the flag; a reviewer clears it, or approving the item again does. An outdated item can't be made a gold standard.
 
+- **Product updates.** When something changes (a feature renamed or retired, new pricing, a model change), a reviewer asks the connector which items it affects. `find_impacted` scans every public item for the exact terms that changed and lists the passages, plus topic matches. For each, the reviewer leaves feedback for the owner, flags it outdated, or adds themselves as an editor and fixes it.
+- **Reviewers can edit public items.** A reviewer can add themselves as an editor of any public item (not private ones). They're then an ordinary editor: version history keeps every change, and changing approved content re-queues it. The owner gets a Slack DM when they join.
+
 ## Roles
 
 - **Owners and editors** request a review (use case, note) or withdraw one; see changes requested and notes.
-- **Reviewers** (`enablement_reviewers`) see `/enablement`: Needs review, Due, Approved, Gold standards (use cases and their gold items). Decisions: Approve, Approve as gold standard, Request changes, Not approved, Remove approval.
+- **Reviewers** (`enablement_reviewers`) can add themselves as editors of public items, and see `/enablement`: Needs review, Due, Approved, Gold standards (use cases and their gold items). Decisions: Approve, Approve as gold standard, Request changes, Not approved, Remove approval.
 - **Admins** manage the reviewers list (Reviewers tab). Admins aren't reviewers unless they add themselves.
 
 ## Surfaces
@@ -33,7 +36,7 @@ Enablement keeps a **gold standard** for each common job (a *use case*, e.g. "Ac
 - Discover: badges on cards, a single Sort menu with Recommended as the default, and an Enablement facet in the filter bar (approved / gold only). No separate gold standards shelf: it competed with the results.
 - Item page: banner under the description, *Enablement review* side panel (facts, rubric, note, built-from gold standard, history), request dialog.
 - Editor: a note when editing approved content.
-- Claude connector: `- enablement:` line on every result, `approved_only` on `search_library` / `browse_library`, `recommended` sort (default with the flag), boost in search and `recommend_for_me`, instructions to prefer approved items when they fit and to warn about outdated ones. Enablement tools: `list_use_cases`, `audit_item`, `request_review` for everyone with the flag; `review_queue`, `decide_review`, `set_gold_standard`, `create_use_case`, `flag_outdated`, `usage_report` for reviewers only (not registered for anyone else). `top_items` is for everyone, flag or not.
+- Claude connector: `- enablement:` line on every result, `approved_only` on `search_library` / `browse_library`, `recommended` sort (default with the flag), boost in search and `recommend_for_me`, instructions to prefer approved items when they fit and to warn about outdated ones. Enablement tools: `list_use_cases`, `audit_item`, `request_review` for everyone with the flag; `review_queue`, `decide_review`, `set_gold_standard`, `create_use_case`, `flag_outdated`, `usage_report`, `find_impacted`, `join_as_editor` for reviewers only (not registered for anyone else). `top_items` and `leave_feedback` are for everyone, flag or not.
 - Slack assistant: candidates ordered by tier, tier shown to the model with a rule to prefer it when it fits, 🏅 / ✅ on reply cards, boost in the non-AI fallback.
 - Slack DMs to the owner (and requester) on every decision; new requests to `ENABLEMENT_SLACK_CHANNEL` when set.
 
@@ -53,4 +56,5 @@ Migration `0027_outdated_and_connector_events.sql`:
 
 - `prompts.outdated_at`, `outdated_by`, `outdated_note`, changed only by `review_set_outdated` (a guard trigger) and cleared when `review_decide` approves. `prompt_reviews` gains statuses `outdated` / `outdated_cleared` and reason `outdated` for the history.
 - `connector_enablement(actor, action, args)`: service role only. Sets the actor's JWT claims for the transaction and calls the `review_*` function, so `can_review()`, `can_edit_prompt()` and `auth.uid()` see the person behind the MCP token.
+- (0028) `review_join_as_editor(prompt)`: reviewers add themselves to `prompt_editors` of a public item; `connector_enablement` gains `join_editor`.
 - `connector_events`: one row per connector tool call, readable by admins and reviewers. Views `connector_item_usage` (runs, opens, installs, people, last used per item) and `connector_search_gaps` (searches that found nothing). `connector_usage(since)` backs `top_items`.

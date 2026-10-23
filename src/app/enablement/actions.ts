@@ -132,6 +132,17 @@ export async function setOutdated(promptId: string, outdated: boolean, note: str
   return done(promptId);
 }
 
+/** Reviewers: become an editor of a public item, to fix it themselves. The owner gets a DM. */
+export async function joinAsEditor(promptId: string): Promise<ActionResult> {
+  const { supabase, error, user } = await requireReviewer();
+  if (error) return { ok: false, error };
+  const { data, error: e } = await supabase.rpc("review_join_as_editor", { p_prompt: promptId });
+  if (e) return sqlError(e);
+  const p = data === true ? await getPrompt(promptId) : null;
+  if (p) after(() => notifyDecision({ to: [p.owner.email], promptId, title: p.title, decision: "editor_joined", reviewer: user.name, note: "" }));
+  return done(promptId);
+}
+
 export async function setGold(useCaseId: string, promptId: string | null): Promise<ActionResult> {
   const { supabase, error, user } = await requireReviewer();
   if (error) return { ok: false, error };

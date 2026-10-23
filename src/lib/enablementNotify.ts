@@ -49,7 +49,7 @@ async function withFlag(emails: string[]): Promise<string[]> {
 
 const quote = (s: string) => (s.trim() ? `> ${s.trim().replace(/\n+/g, "\n> ")}` : "");
 
-export type Decision = "approved" | "gold" | "changes_requested" | "declined" | "revoked" | "outdated";
+export type Decision = "approved" | "gold" | "changes_requested" | "declined" | "revoked" | "outdated" | "editor_joined";
 
 /** Tell the owner (and whoever asked, if someone else) what Enablement decided. */
 export async function notifyDecision(opts: {
@@ -72,6 +72,8 @@ export async function notifyDecision(opts: {
           ? message(`✏️ Changes requested on ${t}`, [`From ${opts.reviewer}:`, quote(opts.note)], { label: "Edit and resubmit", url: `${url}/edit` })
           : opts.decision === "declined"
             ? message(`${t} wasn't approved`, [`From ${opts.reviewer}:`, quote(opts.note)], { label: "Open it", url })
+            : opts.decision === "editor_joined"
+              ? message(`✏️ ${opts.reviewer} from Enablement joined ${t} as an editor`, ["They can now update it (for example after a product change). Its version history keeps every change.", quote(opts.note)], { label: "Open it", url })
             : opts.decision === "outdated"
               ? message(`⚠️ Enablement flagged ${t} as outdated`, [`From ${opts.reviewer}:`, quote(opts.note), "It's listed after current items until you update it and it's approved again."], { label: "Update it", url: `${url}/edit` })
               : message(`Enablement removed the approval on ${t}`, [`From ${opts.reviewer}:`, quote(opts.note)], { label: "Open it", url });
