@@ -8,6 +8,7 @@ import { Header } from "@/components/Header";
 import { getCatalog, getCatalogUsage, getCurrentUser, isAdmin } from "@/lib/data";
 import { composeDigest, getDigestRuns, getDigestSettings, windowFor, type WindowKind } from "@/lib/digest/run";
 import { AGENT_MODEL } from "@/lib/agent/answer";
+import { modelLabel } from "@/lib/llm";
 import { slackConfigured, slackEventsConfigured } from "@/lib/slack";
 import { createClient } from "@/lib/supabase/server";
 
@@ -77,7 +78,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         />
       </div>
       <div style={{ maxWidth: 960, marginTop: 28 }}>
-        <AssistantPanel eventsReady={slackEventsConfigured()} slackReady={slackConfigured()} model={AGENT_MODEL} recent={recentAsks} />
+        <AssistantPanel eventsReady={slackEventsConfigured()} slackReady={slackConfigured()} model={modelLabel(AGENT_MODEL)} recent={recentAsks} />
       </div>
     </div>
   );

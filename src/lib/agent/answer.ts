@@ -1,6 +1,7 @@
 import "server-only";
 import { generateText, Output } from "ai";
 import { z } from "zod";
+import { chatModel, LLM_TIMEOUT_MS, modelLabel } from "@/lib/llm";
 import { type Candidate, describeCandidates, type LexicalResult } from "./catalog";
 
 /**
@@ -87,12 +88,12 @@ export async function answerQuestion(
 
   try {
     const result = await generateText({
-      model: AGENT_MODEL,
+      model: chatModel(AGENT_MODEL),
       system: SYSTEM,
       prompt,
       output: Output.object({ schema: AnswerSchema }),
       maxRetries: 1,
-      abortSignal: AbortSignal.timeout(25_000),
+      abortSignal: AbortSignal.timeout(Math.min(LLM_TIMEOUT_MS, 50_000)),
     });
     const answer = result.output as Answer | undefined;
     if (!answer) throw new Error("model returned no structured output");
@@ -102,7 +103,7 @@ export async function answerQuestion(
       : answer.matches.filter((m) => byId.has(m.id) && !seen.has(m.id) && (seen.add(m.id), true)).map((m) => byId.get(m.id)!);
     const why = new Map(answer.matches.filter((m) => seen.has(m.id)).map((m) => [m.id, m.why]));
     const cleaned: Answer = { ...answer, matches: answer.matches.filter((m) => seen.has(m.id)) };
-    return { answer: cleaned, matches, why, model: AGENT_MODEL, fallback: false };
+    return { answer: cleaned, matches, why, model: modelLabel(AGENT_MODEL), fallback: false };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn("[agent] model call failed, using lexical search:", message);
@@ -122,7 +123,7 @@ export async function answerQuestion(
       },
       matches: lex.matches.map((m) => m.candidate),
       why: new Map(lex.matches.map((m) => [m.candidate.id, m.why])),
-      model: AGENT_MODEL,
+      model: modelLabel(AGENT_MODEL),
       fallback: true,
       error: message,
     };

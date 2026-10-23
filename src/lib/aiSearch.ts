@@ -2,6 +2,7 @@ import "server-only";
 import { generateText, type LanguageModel, Output } from "ai";
 import { z } from "zod";
 import { AGENT_MODEL } from "./agent/answer";
+import { chatModel, LLM_TIMEOUT_MS } from "./llm";
 import { approvalRank } from "./approval";
 import { searchPrompts } from "./search";
 import type { Profile, Prompt } from "./types";
@@ -192,7 +193,7 @@ export async function askLibraryAi(
   me: Profile,
   turns: Turn[],
   appNames: string[],
-  model: LanguageModel = AI_SEARCH_MODEL,
+  model: LanguageModel = chatModel(AI_SEARCH_MODEL),
   viewing: Prompt | null = null,
 ): Promise<AiResult> {
   const pool = candidates(items, turns, appNames);
@@ -226,7 +227,7 @@ export async function askLibraryAi(
         messages: pageMessages,
         maxOutputTokens: 1600,
         maxRetries: 1,
-        abortSignal: AbortSignal.timeout(30_000),
+        abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
       });
       const reply = result.text.trim();
       if (!reply) throw new Error("model returned no text");
@@ -239,7 +240,7 @@ export async function askLibraryAi(
       output: Output.object({ schema: ReplySchema }),
       maxOutputTokens: 1600,
       maxRetries: 1,
-      abortSignal: AbortSignal.timeout(30_000),
+      abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
     });
     const out = result.output as z.infer<typeof ReplySchema> | undefined;
     if (!out) throw new Error("model returned no structured output");
