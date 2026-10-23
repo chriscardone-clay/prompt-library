@@ -13,12 +13,12 @@ import type { Profile, Prompt } from "./types";
  * follow-up turns. Runs on Vercel's AI Gateway like the Slack assistant.
  */
 /**
- * Ask AI's own model, independent of the Slack assistant's. Haiku follows these
- * instructions and returns the structured picks reliably at a fraction of
- * Sonnet's price. Needs paid AI Gateway credits (the free tier only serves a
- * handful of evaluation models).
+ * Ask AI's own model, independent of the Slack assistant's: OpenAI's GPT-6 Luna, an
+ * efficient reasoning model with structured outputs, priced like the small
+ * Claude models. Needs paid AI Gateway credits (the free tier only serves a
+ * handful of evaluation models). Override with AI_SEARCH_MODEL.
  */
-export const AI_SEARCH_MODEL = process.env.AI_SEARCH_MODEL?.trim() || "anthropic/claude-haiku-5.5";
+export const AI_SEARCH_MODEL = process.env.AI_SEARCH_MODEL?.trim() || "openai/gpt-6-luna";
 
 /** Turns sent to the model: the most recent ones, so long chats stay fast. */
 export const CONTEXT_TURNS = 12;
